@@ -131,6 +131,5 @@ npm test
 - [官方 openai.js：请求参数与发送事件](https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/openai.js)
 - [官方 st-context.js：设置与事件上下文](https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/st-context.js)
 - [官方 events.js](https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/events.js)
-- [Claude 官方说明：不支持原生 prefill 时的请求错误](https://platform.claude.com/docs/en/api/errors#prefill-not-supported)
 
 
