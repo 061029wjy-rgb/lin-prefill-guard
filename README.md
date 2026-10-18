@@ -133,4 +133,4 @@ npm test
 - [官方 events.js](https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/events.js)
 - [Claude 官方说明：不支持原生 prefill 时的请求错误](https://platform.claude.com/docs/en/api/errors#prefill-not-supported)
 
-MIT License。代码为本次独立编写；没有打包其他作者的脚本或用户上传的完整预设。
+
