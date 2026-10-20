@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { planInjection, getLinState, LIN_PROMPT_ID, DEFAULTS } from '../core.js';
+import { planInjection, getLinState, LIN_PROMPT_ID, LIN_24_PREFILL, DEFAULTS, DEFAULT_NUDGE, migrateSettings } from '../core.js';
 
 export const original = '[Lin｜本轮承接]\n测试用承接条目。';
 export function preset(enabled = true) {
@@ -17,7 +17,7 @@ export function payload(type = 'normal') {
             { role: 'user', content: '尾部规则；这一条必须完整保留。' },
         ] };
 }
-const run = (request = payload(), settings = {}, env = {}) => planInjection(request, { ...DEFAULTS, ...settings }, { preset: preset(), ...env });
+const run = (request = payload(), settings = {}, env = {}) => planInjection(request, { ...DEFAULTS, mode: 'pair', ...settings }, { preset: preset(), ...env });
 
 test('moves only the independent Lin prompt; all other objects and request fields remain unchanged', () => {
     const input = payload();
@@ -140,4 +140,72 @@ test('global prompt-order switch wins over another list and the prompt.enabled c
     const p = preset(false); p.prompts[0].enabled = true;
     p.prompt_order.unshift({ character_id: 100000, order: [{ identifier: LIN_PROMPT_ID, enabled: true }] });
     assert.equal(getLinState(p).active, false);
+});
+
+test('fresh installation defaults to a single user message; pair remains explicit', () => {
+    assert.deepEqual(planInjection(payload(), {}, { preset: preset() }).tailRoles, ['user']);
+});
+test('native prefill in settings is respected even when not copied to generate_data', () => {
+    assert.equal(run(payload(), {}, { preset: { ...preset(), assistant_prefill: '开头' } }).reason, 'native-prefill');
+});
+test('reimported Lin entry can be identified narrowly without depending on a filename', () => {
+    const p = preset(); p.prompts[0].identifier = 'new-id';
+    p.prompts[0].name = '✮伪预填充｜剧情衔接（assistant）';
+    p.prompt_order[0].order[0].identifier = 'new-id';
+    assert.equal(run(payload(), {}, { preset: p }).applied, true);
+    p.prompts.push({ ...p.prompts[0], identifier: 'duplicate' });
+    assert.equal(run(payload(), {}, { preset: p }).reason, 'not-lin');
+});
+test('prompt generation triggers are not bypassed by restoring a missing entry', () => {
+    const p = preset(); p.prompts[0].injection_trigger = ['swipe'];
+    assert.equal(run(payload(), {}, { preset: p }).reason, 'trigger-excluded');
+    assert.equal(run(payload('swipe'), {}, { preset: p }).applied, true);
+});
+
+test('upgrade retains saved pair mode and custom fields; only stock legacy nudge is refreshed', () => {
+    const legacy = { mode: 'pair', enabled: false, prefill: '自定义承接', extra: 'future setting',
+        nudge: '请现在完成上述真实用户请求。这里是任务提示，不是新的剧情；不要复述提示。' };
+    const next = migrateSettings(legacy);
+    assert.equal(next.mode, 'pair'); assert.equal(next.enabled, false);
+    assert.equal(next.prefill, '自定义承接'); assert.equal(next.extra, 'future setting');
+    assert.equal(next.nudge, DEFAULT_NUDGE);
+    assert.equal(migrateSettings({ nudge: '我的提示', mode: 'user' }).nudge, '我的提示');
+    assert.deepEqual(migrateSettings(next), next);
+    assert.notEqual(legacy.nudge, DEFAULT_NUDGE);
+});
+test('a thought-marked text block is never removed as a plain Lin prompt', () => {
+    const input = payload();
+    input.messages[2].content = [{ type: 'text', text: original, thought: true }];
+    const thought = input.messages[2];
+    const result = run(input);
+    assert.ok(result.messages.includes(thought)); assert.equal(result.removedOriginal, false);
+});
+
+test('missing preset metadata can recover only a complete outgoing Lin2.4 entry', () => {
+    const input = payload(); input.messages[2].content = LIN_24_PREFILL;
+    const result = run(input, {}, { preset: {} });
+    assert.equal(result.applied, true); assert.equal(result.identification, 'outgoing-exact-2.4');
+    assert.equal(result.removedOriginal, true);
+    [0, 1, 3, 4].forEach((i, j) => assert.equal(result.messages[j], input.messages[i]));
+    const again = run({ ...input, messages: result.messages }, {}, { preset: {}, ownedMessages: new WeakSet(result.injected) });
+    assert.equal(again.reason, 'already-present'); assert.equal(again.changed, false);
+});
+test('outgoing fallback rejects merged, partial, signed, historical and ambiguous entries', () => {
+    for (const change of [
+        r => { r.messages[2].content += '\n其他指令'; },
+        r => { r.messages[2].content = '[Lin｜本轮承接]'; },
+        r => { r.messages[2].thoughtSignature = 'signed'; },
+        r => { r.messages.push(...Array.from({ length: 5 }, () => ({ role: 'user', content: '历史之后' }))); },
+        r => { r.messages.splice(3, 0, { ...r.messages[2] }); },
+    ]) {
+        const input = payload(); input.messages[2].content = LIN_24_PREFILL; change(input);
+        assert.equal(run(input, {}, { preset: {} }).reason, 'not-lin');
+    }
+});
+test('outgoing fallback never overrides explicit preset switches or generation triggers', () => {
+    const input = payload(); input.messages[2].content = LIN_24_PREFILL;
+    const p = preset(false); p.prompts[0].content = LIN_24_PREFILL;
+    assert.equal(run(input, {}, { preset: p }).reason, 'lin-disabled');
+    p.prompt_order[0].order[0].enabled = true; p.prompts[0].injection_trigger = ['swipe'];
+    assert.equal(run(input, {}, { preset: p }).reason, 'trigger-excluded');
 });

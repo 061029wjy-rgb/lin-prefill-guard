@@ -12,15 +12,37 @@ class Bus {
 }
 function fixture(extra = {}) {
     const bus = new Bus();
-    const config = { ...DEFAULTS };
+    const config = { ...DEFAULTS, mode: 'pair' };
     const ctx = { eventSource: bus, eventTypes: { CHAT_COMPLETION_SETTINGS_READY: 'request', GENERATION_STARTED: 'start', MESSAGE_RECEIVED: 'message' },
         chatCompletionSettings: { prompts: [{ identifier: LIN_PROMPT_ID, role: 'assistant', content: '原承接' }], prompt_order: [{ character_id: 100001, order: [{ identifier: LIN_PROMPT_ID, enabled: true }] }] },
         chat: [{ is_user: false, mes: '书店里一片寂静。' }], ...extra };
     const views = [];
-    const controller = createController({ getContext: () => ctx, getSettings: () => config, onStatus: x => views.push(x) });
+    const networkTarget = { location: { href: 'http://localhost/' }, fetch: async () => new Response(JSON.stringify({ choices: [{ message: { content: '接口正文' }, finish_reason: 'stop' }] }), { headers: { 'content-type': 'application/json' } }) };
+    const controller = createController({ getContext: () => ctx, getSettings: () => config, onStatus: x => views.push(x), networkTarget });
     const request = () => ({ type: 'normal', messages: [{ role: 'user', content: '接着写。' }, { role: 'assistant', content: '原承接' }, { role: 'user', content: '尾部' }], stream: true });
-    return { bus, config, ctx, controller, request, views };
+    return { bus, config, ctx, controller, request, views, networkTarget };
 }
+
+test('saved HTML CoT is not described as delivered story prose', async () => {
+    const f = fixture(); await f.bus.emit('request', f.request());
+    const original = '<!-- Lin_CoT: only a private planning summary -->';
+    f.ctx.chat.push({ is_user: false, mes: original, extra: { reasoning: '' } });
+    await f.bus.emit('message', 1, 'normal');
+    const record = f.controller.snapshot().last;
+    assert.equal(record.rendered.output.onlyNotes, true);
+    assert.equal(record.rendered.reasoningChars, 0);
+    assert.match(f.controller.snapshot().response, /尚无.*正文/);
+    assert.equal(f.ctx.chat[1].mes, original);
+    assert.ok(!JSON.stringify(record).includes('private planning summary'));
+    f.controller.dispose();
+});
+test('manual inspection analyzes an existing reply without a generation or stored source', () => {
+    const f = fixture(); f.ctx.chat[0].mes = '<!-- Lin_CoT: PRIVATE -->';
+    assert.match(f.controller.inspectCurrent(), /尚无.*正文/);
+    assert.equal(f.controller.snapshot().last.type, 'saved-inspection');
+    assert.ok(!JSON.stringify(f.controller.snapshot()).includes('PRIVATE'));
+    assert.equal(f.ctx.chat[0].mes, '<!-- Lin_CoT: PRIVATE -->'); f.controller.dispose();
+});
 
 test('event mutates only the temporary request.messages property, not saved chat or settings', async () => {
     const f = fixture(); const chat = structuredClone(f.ctx.chat); const preset = structuredClone(f.ctx.chatCompletionSettings);
@@ -58,8 +80,8 @@ test('local preview neither sends nor mutates and does not masquerade as an actu
     assert.equal(f.controller.preview(req).applied, true); assert.deepEqual(req, before); assert.equal(f.controller.snapshot().last, null);
 });
 test('empty text is reported without changing a response or triggering a new request', async () => {
-    const f = fixture(); f.ctx.chat[0].mes = ''; await f.bus.emit('request', f.request()); await f.bus.emit('message', 0);
-    assert.match(f.controller.snapshot().response, /空正文/); assert.equal(f.ctx.chat[0].mes, '');
+    const f = fixture(); await f.bus.emit('request', f.request()); f.ctx.chat.push({ is_user: false, mes: '' }); await f.bus.emit('message', 1);
+    assert.match(f.controller.snapshot().response, /空正文/); assert.equal(f.ctx.chat[1].mes, '');
 });
 test('unsupported event API is reported instead of guessed', () => {
     const f = fixture({ eventTypes: {} }); assert.equal(f.controller.snapshot().last.reason, 'unsupported-client');
@@ -70,7 +92,170 @@ test('frozen request is preserved and reported as an error', async () => {
 });
 test('a settings UI exception cannot break request preparation', async () => {
     const f = fixture(); f.controller.dispose();
-    const c = createController({ getContext: () => f.ctx, getSettings: () => f.config, onStatus: () => { throw new Error('UI failure'); } });
+    const c = createController({ getContext: () => f.ctx, getSettings: () => f.config, networkTarget: f.networkTarget, onStatus: () => { throw new Error('UI failure'); } });
     const req = f.request(); await f.bus.emit('request', req);
     assert.equal(c.snapshot().last.applied, true); assert.equal(req.messages.at(-1).role, 'user');
+});
+
+test('serialized request is checked independently and linked to the exact response', async () => {
+    const f = fixture(); const req = f.request(); req.model = 'gemini-4-argon'; req.api_key = 'PRIVATE KEY';
+    await f.bus.emit('request', req);
+    const prepared = f.controller.snapshot().last;
+    assert.equal(prepared.dispatch, undefined);
+    const output = await f.networkTarget.fetch('/api/backends/chat-completions/generate', { method: 'POST', body: JSON.stringify(req) });
+    await output.text(); await f.controller.idle();
+    const record = f.controller.snapshot().history[0];
+    assert.equal(record.id, prepared.id); assert.equal(record.dispatch.tail, true);
+    assert.deepEqual(record.dispatch.injected.map(m => m.content), prepared.injected.map(m => m.content));
+    assert.equal(record.wire.visibleChars, 4); assert.equal(record.wire.finishReason, 'stop');
+    assert.ok(!JSON.stringify(record).includes('PRIVATE KEY')); assert.ok(!JSON.stringify(record).includes('接着写。'));
+    f.controller.dispose();
+});
+test('a later appended message is detected at the send boundary', async () => {
+    const f = fixture(); const req = f.request(); await f.bus.emit('request', req);
+    req.messages.push({ role: 'system', content: 'changed after official event' });
+    const response = await f.networkTarget.fetch('/api/backends/chat-completions/generate', { method: 'POST', body: JSON.stringify(req) });
+    await response.text(); await f.controller.idle();
+    assert.equal(f.controller.snapshot().last.dispatch.tail, false);
+    assert.equal(f.controller.snapshot().last.dispatch.correlation, 'injection-match');
+    f.controller.dispose();
+});
+test('missing injection cannot masquerade as verified success', async () => {
+    const f = fixture(); const req = f.request(); await f.bus.emit('request', req);
+    req.messages = [{ role: 'user', content: 'replaced by another extension' }];
+    const response = await f.networkTarget.fetch('/api/backends/chat-completions/generate', { method: 'POST', body: JSON.stringify(req) });
+    await response.text(); await f.controller.idle();
+    assert.equal(f.controller.snapshot().last.reason, 'unmatched-dispatch');
+    assert.deepEqual(f.controller.snapshot().last.dispatch.injected, []);
+    f.controller.dispose();
+});
+test('disabling network capture retains event history without claiming transmission', async () => {
+    const f = fixture(); f.config.captureNetwork = false;
+    const req = f.request(); await f.bus.emit('request', req);
+    const response = await f.networkTarget.fetch('/api/backends/chat-completions/generate', { method: 'POST', body: JSON.stringify(req) });
+    await response.text(); await f.controller.idle();
+    assert.equal(f.controller.snapshot().last.dispatch, undefined); f.controller.dispose();
+});
+test('budget adjustment only changes an eligible outgoing request, never preset settings', async () => {
+    const f = fixture(); f.config.reasoningMode = 'balanced';
+    f.ctx.chatCompletionSettings.reasoning_effort = 'max';
+    const req = { ...f.request(), model: 'gemini-4-argon', reasoning_effort: 'max' };
+    await f.bus.emit('request', req);
+    assert.equal(req.reasoning_effort, 'medium'); assert.equal(f.ctx.chatCompletionSettings.reasoning_effort, 'max');
+    assert.equal(f.controller.snapshot().last.adjustment.before, 'max'); f.controller.dispose();
+});
+test('end without MESSAGE_RECEIVED is logged; later valid message still updates it', async () => {
+    const f = fixture({ eventTypes: { CHAT_COMPLETION_SETTINGS_READY: 'request', GENERATION_ENDED: 'end', MESSAGE_RECEIVED: 'message' } });
+    await f.bus.emit('request', f.request()); await f.bus.emit('end');
+    assert.match(f.controller.snapshot().last.lifecycle, /尚未观察到/);
+    f.ctx.chat.push({ is_user: false, mes: '结果' }); await f.bus.emit('message', 1, 'normal');
+    assert.equal(f.controller.snapshot().last.rendered.chars, 2); f.controller.dispose();
+});
+test('old messages, first messages and switched chats cannot be attributed as a reply', async () => {
+    const f = fixture(); await f.bus.emit('request', f.request());
+    await f.bus.emit('message', 0, 'normal'); assert.equal(f.controller.snapshot().last.rendered, undefined);
+    f.ctx.chat = [{ is_user: false, mes: 'unrelated' }, { is_user: false, mes: 'new unrelated' }];
+    await f.bus.emit('message', 1, 'normal'); await f.bus.emit('message', 1, 'first_message');
+    assert.equal(f.controller.snapshot().last.rendered, undefined); f.controller.dispose();
+});
+test('duplicate event keeps one history entry and local preview does not create one', async () => {
+    const f = fixture(); f.controller.preview(f.request()); assert.equal(f.controller.snapshot().history.length, 0);
+    const req = f.request(); await f.bus.emit('request', req); await f.bus.emit('request', req);
+    assert.equal(f.controller.snapshot().history.length, 1); f.controller.dispose();
+});
+
+test('repeated preparation after send preserves dispatch, response, and saved-body evidence', async () => {
+    const f = fixture(); const req = f.request();
+    await f.bus.emit('request', req);
+    const response = await f.networkTarget.fetch('/api/backends/chat-completions/generate', { method: 'POST', body: JSON.stringify(req) });
+    await response.text(); await f.controller.idle();
+    f.ctx.chat.push({ is_user: false, mes: '正文' }); await f.bus.emit('message', 1, 'normal');
+    const before = f.controller.snapshot().last;
+    await f.bus.emit('request', req);
+    const after = f.controller.snapshot().last;
+    assert.deepEqual(after.dispatch, before.dispatch); assert.equal(after.dispatch.verified, true);
+    assert.deepEqual(after.wire, before.wire); assert.deepEqual(after.rendered, before.rendered);
+    assert.equal(f.controller.snapshot().history.length, 1);
+    f.controller.dispose();
+});
+test('duplicate preparation during generation does not move the baseline past the new reply', async () => {
+    const f = fixture(); const req = f.request(); await f.bus.emit('request', req);
+    f.ctx.chat.push({ is_user: false, mes: '' });
+    await f.bus.emit('request', req); f.ctx.chat[1].mes = '完成';
+    await f.bus.emit('message', 1, 'normal');
+    assert.equal(f.controller.snapshot().last.rendered.chars, 2); f.controller.dispose();
+});
+test('regenerate accepts the normal completion event produced by saveReply', async () => {
+    const f = fixture(); const req = { ...f.request(), type: 'regenerate' };
+    await f.bus.emit('request', req); f.ctx.chat.push({ is_user: false, mes: '重新写好的正文' });
+    await f.bus.emit('message', 1, 'normal');
+    assert.equal(f.controller.snapshot().last.rendered.chars, 7); f.controller.dispose();
+});
+test('continuation recognizes appendFinal while swipe rejects an unrelated older message', async () => {
+    const f = fixture(); f.ctx.chat.push({ is_user: false, mes: '末条' });
+    await f.bus.emit('request', { ...f.request(), type: 'continue' });
+    f.ctx.chat[1].mes += '补完'; await f.bus.emit('message', 1, 'appendFinal');
+    assert.equal(f.controller.snapshot().last.rendered.chars, 4);
+    await f.bus.emit('request', { ...f.request(), type: 'swipe' });
+    await f.bus.emit('message', 0, 'swipe');
+    assert.equal(f.controller.snapshot().last.rendered, undefined);
+    await f.bus.emit('message', 1, 'swipe');
+    assert.equal(f.controller.snapshot().last.rendered.chars, 4); f.controller.dispose();
+});
+test('identical pending requests are ambiguous and are never credited to a guessed record', async () => {
+    const f = fixture(); const first = f.request(); const second = f.request();
+    await f.bus.emit('request', first); await f.bus.emit('request', second);
+    const response = await f.networkTarget.fetch('/api/backends/chat-completions/generate', { method: 'POST', body: JSON.stringify(second) });
+    await response.text(); await f.controller.idle();
+    assert.equal(f.controller.snapshot().last.reason, 'unmatched-dispatch');
+    assert.match(f.controller.snapshot().last.explanation, /多个相同/);
+    assert.ok(f.controller.snapshot().history.every(r => !r.dispatch?.verified)); f.controller.dispose();
+});
+test('two copies of one cue do not verify an incomplete assistant/user pair', async () => {
+    const f = fixture(); const req = f.request(); await f.bus.emit('request', req);
+    const user = req.messages.at(-1);
+    req.messages = [req.messages[0], user, { ...user }];
+    const response = await f.networkTarget.fetch('/api/backends/chat-completions/generate', { method: 'POST', body: JSON.stringify(req) });
+    await response.text(); await f.controller.idle();
+    assert.equal(f.controller.snapshot().last.reason, 'unmatched-dispatch'); f.controller.dispose();
+});
+
+test('same-role message merge retains verifiable full injection without storing surrounding chat', async () => {
+    const f = fixture(); f.config.mode = 'user';
+    const req = f.request(); await f.bus.emit('request', req);
+    const recordId = f.controller.snapshot().last.id;
+    const last = req.messages.pop();
+    req.messages.at(-1).content += '\n\n' + last.content;
+    const output = await f.networkTarget.fetch('/api/backends/chat-completions/generate', { method: 'POST', body: JSON.stringify(req) });
+    await output.text(); await f.controller.idle();
+    const record = f.controller.snapshot().last;
+    assert.equal(record.id, recordId); assert.equal(record.dispatch.verified, true);
+    assert.equal(record.dispatch.tail, true); assert.equal(record.dispatch.injected[0].match, 'segment');
+    assert.ok(!JSON.stringify(record).includes('尾部')); f.controller.dispose();
+});
+test('a cue inside a merged message is not marked last if more content follows it', async () => {
+    const f = fixture(); f.config.mode = 'user'; const req = f.request(); await f.bus.emit('request', req);
+    req.messages.at(-1).content += '\n\nadditional instruction';
+    const output = await f.networkTarget.fetch('/api/backends/chat-completions/generate', { method: 'POST', body: JSON.stringify(req) });
+    await output.text(); await f.controller.idle();
+    assert.equal(f.controller.snapshot().last.dispatch.verified, true);
+    assert.equal(f.controller.snapshot().last.dispatch.tail, false); f.controller.dispose();
+});
+test('late network diagnostics keep saved-text evidence visible in the status panel', async () => {
+    const f = fixture(); const req = f.request(); await f.bus.emit('request', req);
+    f.ctx.chat.push({ is_user: false, mes: '已有正文' }); await f.bus.emit('message', 1, 'normal');
+    const output = await f.networkTarget.fetch('/api/backends/chat-completions/generate', { method: 'POST', body: JSON.stringify(req) });
+    await output.text(); await f.controller.idle();
+    assert.match(f.controller.snapshot().response, /已保存 4 字符/);
+    assert.match(f.controller.snapshot().response, /协议不一致/); f.controller.dispose();
+});
+test('unmatched sends keep candidate links but do not claim that requests were correlated', async () => {
+    const f = fixture({ chatCompletionSettings: {} }); const req = f.request(); await f.bus.emit('request', req);
+    const assembled = f.controller.snapshot().last.id;
+    req.messages = [req.messages[0]];
+    const output = await f.networkTarget.fetch('/api/backends/chat-completions/generate', { method: 'POST', body: JSON.stringify(req) });
+    await output.text(); await f.controller.idle();
+    const record = f.controller.snapshot().last;
+    assert.equal(record.reason, 'unmatched-dispatch'); assert.deepEqual(record.possibleAssemblyIds, [assembled]);
+    assert.equal(record.dispatch.verified, undefined); f.controller.dispose();
 });
