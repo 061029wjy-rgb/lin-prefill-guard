@@ -50,3 +50,15 @@
 }
 #lin-prefill-guard-panel .lpg-button { width: auto; min-height: 40px; padding: 7px 12px; cursor: pointer; font: inherit; font-size: 0.9em; }
 #lin-prefill-guard-panel .lpg-preview { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; font-size: 0.85em; line-height: 1.65; padding: 8px; }
+#lin-prefill-guard-panel .lpg-search,
+#lin-prefill-guard-panel .lpg-records { width: 100%; box-sizing: border-box; min-width: 0; font: inherit; font-size: 0.85em; }
+#lin-prefill-guard-panel .lpg-search { min-height: 42px; }
+#lin-prefill-guard-panel .lpg-records { margin: 8px 0; }
+#lin-prefill-guard-panel .lpg-records option { padding: 8px 5px; overflow: hidden; text-overflow: ellipsis; }
+#lin-prefill-guard-panel .lpg-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+#lin-prefill-guard-panel .lpg-record-detail { max-height: 65vh; user-select: text; }
+#lin-prefill-guard-panel .lpg-audit { white-space: pre-wrap; }
+@media (max-width: 480px) {
+  #lin-prefill-guard-panel .lpg-body { padding: 0 10px 12px; }
+  #lin-prefill-guard-panel .lpg-actions .lpg-button { flex: 1 1 44%; }
+}

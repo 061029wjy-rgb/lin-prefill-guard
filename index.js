@@ -1,19 +1,24 @@
-import { DEFAULTS, DEFAULT_PREFILL, DEFAULT_NUDGE, SETTINGS_KEY, VERSION, REASONS, normalizeSettings } from './core.js';
-import { createController } from './controller.js';
+import { DEFAULT_PREFILL, DEFAULT_NUDGE, SETTINGS_KEY, VERSION, REASONS, normalizeSettings, migrateSettings } from './core.js?v=1.2.2';
+import { createController } from './controller.js?v=1.2.2';
+import { formatRecord } from './diagnostics.js?v=1.2.2';
+import { structureDiagnosis } from './structure.js?v=1.2.2';
 
 const INSTANCE_KEY = Symbol.for('lin-prefill-guard.instance');
 let controller;
 let panel;
 let pendingReady;
 let lastView;
+let selectedRecord = '';
 
 function context() { return globalThis.SillyTavern.getContext(); }
 function settings() {
     const ctx = context();
     if (!ctx.extensionSettings) throw new Error('Extension settings unavailable');
     const current = ctx.extensionSettings[SETTINGS_KEY];
-    if (!current || typeof current !== 'object' || Array.isArray(current)) {
-        ctx.extensionSettings[SETTINGS_KEY] = { ...DEFAULTS };
+    const migrated = migrateSettings(current);
+    if (JSON.stringify(current) !== JSON.stringify(migrated)) {
+        ctx.extensionSettings[SETTINGS_KEY] = migrated;
+        ctx.saveSettingsDebounced?.();
     }
     return ctx.extensionSettings[SETTINGS_KEY];
 }
@@ -36,7 +41,11 @@ function updateStatus(view) {
     const state = normalizeSettings(settings());
     const last = lastView?.last;
     const badge = panel.querySelector('.lpg-badge');
-    badge.textContent = !state.enabled ? '已关闭' : last?.applied ? '已注入' : last ? '未注入' : '等待请求';
+    const output = last?.rendered?.output || last?.wire?.output;
+    const incomplete = structureDiagnosis(output) || last?.wire?.missingTerminal;
+    const thinkingOnly = last?.rendered ? last.rendered.chars === 0 && last.rendered.reasoningChars > 0
+        : last?.wire?.recognized && last.wire.visibleChars === 0 && (last.wire.reasoningChars > 0 || last.wire.thoughtTokens > 0) && !last.wire.toolCalls;
+    badge.textContent = !state.enabled ? '已关闭' : output?.onlyNotes || thinkingOnly ? '尚无正文' : incomplete ? '疑似未完成' : last?.dispatch?.verified ? '已核对发送' : last?.applied ? '已组装' : last ? '未注入' : '等待请求';
     badge.dataset.state = !state.enabled ? 'off' : last?.applied ? 'ok' : 'idle';
     const status = panel.querySelector('.lpg-status');
     const lines = [];
@@ -46,14 +55,77 @@ function updateStatus(view) {
         lines.push(last.explanation);
         if (last.applied) {
             lines.push(`原承接条目：${last.removedOriginal ? '仅在本次请求中替换' : '未移除'}；字符净变化：${last.netChars >= 0 ? '+' : ''}${last.netChars}`);
-            lines.push('已注入只表示通过本扩展的本地检查，不代表服务器接收或模型执行。');
+            lines.push(last.dispatch?.label || '已组装；尚未观察到发送，或网络取证未开启。');
         }
         if (last.note) lines.push(last.note);
     } else lines.push('选择 Lin 预设并正常发送一条消息后，这里会显示检查结果。');
     if (lastView?.response) lines.push(lastView.response);
     if (lastView?.lastSkip) lines.push(`后台检查：${lastView.lastSkip.explanation}`);
+    if (lastView?.storageWarning) lines.push(lastView.storageWarning);
+    if (state.captureNetwork && lastView?.networkAvailable === false) lines.push('当前页面无法安装网络取证；仅记录请求事件，不能核对实际发送。');
     status.textContent = lines.join('\n');
     panel.querySelector('.lpg-preview').textContent = last?.preview || '尚无本轮注入内容。';
+    renderHistory();
+}
+
+function renderHistory() {
+    const list = panel?.querySelector('.lpg-records');
+    if (!list) return;
+    const query = panel.querySelector('.lpg-search').value.trim().toLowerCase();
+    const records = (lastView?.history || []).filter(r => !query || formatRecord(r).toLowerCase().includes(query));
+    list.replaceChildren();
+    for (const r of records) {
+        const label = `${new Date(r.at).toLocaleString()} · ${r.request?.model || r.type} · ${r.dispatch?.verified ? '已核对发送' : r.applied ? '已组装' : '未注入'} · ${r.id.slice(-8)}`;
+        list.append(element('option', { value: r.id }, label));
+    }
+    if (!records.some(r => r.id === selectedRecord)) selectedRecord = records[0]?.id || '';
+    list.value = selectedRecord;
+    panel.querySelector('.lpg-history-count').textContent = `${records.length} 条匹配 / 最近 ${lastView?.history?.length || 0} 条`;
+    panel.querySelector('.lpg-record-detail').textContent = formatRecord(records.find(r => r.id === selectedRecord));
+}
+
+async function copyText(text) {
+    if (navigator.clipboard?.writeText && globalThis.isSecureContext) {
+        try { await navigator.clipboard.writeText(text); return; } catch { /* HTTP / mobile fallback */ }
+    }
+    const box = element('textarea', { value: text, readOnly: true });
+    box.style.position = 'fixed'; box.style.opacity = '0';
+    document.body.append(box); box.select(); box.setSelectionRange(0, text.length);
+    const ok = document.execCommand('copy'); box.remove();
+    if (!ok) throw new Error('copy unavailable');
+}
+
+function historyPanel() {
+    const details = element('details', { className: 'lpg-advanced lpg-history' });
+    details.append(element('summary', {}, '注入历史 · 查询 / 复制 / 导出'));
+    details.append(hint('从本版启用后开始，最近 50 条随酒馆账户设置保存，刷新后可查询；不能恢复旧版记录。只记录插件提示、请求参数及响应统计，不记录完整聊天、密钥或思考原文。'));
+    const search = element('input', { type: 'search', className: 'text_pole lpg-search', placeholder: '搜索时间、模型、注入文字或诊断' });
+    search.setAttribute('aria-label', '搜索注入历史');
+    search.addEventListener('input', renderHistory);
+    const list = element('select', { className: 'text_pole lpg-records', size: 4 });
+    list.setAttribute('aria-label', '选择历史请求');
+    list.addEventListener('change', () => { selectedRecord = list.value; renderHistory(); });
+    const detail = element('pre', { className: 'lpg-record-detail lpg-preview' });
+    const feedback = element('p', { className: 'lpg-hint', role: 'status' });
+    const copy = element('button', { type: 'button', className: 'menu_button lpg-button' }, '复制所选记录');
+    copy.addEventListener('click', async () => {
+        try { await copyText(detail.textContent); feedback.textContent = '已复制。'; }
+        catch { feedback.textContent = '浏览器未允许自动复制，可长按下方记录手动复制。'; }
+    });
+    const exportButton = element('button', { type: 'button', className: 'menu_button lpg-button' }, '导出全部诊断 JSON');
+    exportButton.addEventListener('click', () => {
+        const blob = new Blob([JSON.stringify({ version: VERSION, exportedAt: new Date().toISOString(), records: lastView?.history || [] }, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = element('a', { href: url, download: `Lin-prefill-history-${new Date().toISOString().slice(0, 10)}.json` });
+        document.body.append(link); link.click(); link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 30000);
+        feedback.textContent = '已导出；分享前请检查自定义注入文字。';
+    });
+    const clear = element('button', { type: 'button', className: 'menu_button lpg-button' }, '清空历史');
+    clear.addEventListener('click', () => { controller.clearHistory(); feedback.textContent = '历史已清空。'; });
+    const buttons = element('div', { className: 'lpg-actions' }); buttons.append(copy, exportButton, clear);
+    details.append(search, element('p', { className: 'lpg-hint lpg-history-count' }), list, buttons, feedback, detail);
+    return details;
 }
 
 function checkbox(label, key) {
@@ -97,9 +169,15 @@ function mount() {
     const body = element('div', { className: 'lpg-body' });
     body.append(hint(`v${VERSION} · 请求发送前整理承接提示。普通消息引导，不是原生预填充。`));
     body.append(checkbox('启用扩展', 'enabled'));
-    body.append(select('适用范围', 'scope', [['lin', '仅已识别且启用的 Lin 2.1 承接条目（推荐）'], ['all', '所有 Chat Completion 预设']]));
-    body.append(select('注入方式', 'mode', [['pair', 'assistant 承接 + user 执行（推荐）'], ['user', '单条 user 提示（兼容模式）']]));
+    body.append(select('适用范围', 'scope', [['lin', '仅已识别且启用的 Lin 承接条目（2.1—2.6）'], ['all', '所有 Chat Completion 预设']]));
+    body.append(select('注入方式', 'mode', [['user', '单条 user 提示（兼容优先）'], ['pair', 'assistant 承接 + user 执行']]));
+    body.append(select('思考预算', 'reasoningMode', [['keep', '沿用当前参数'], ['balanced', '已识别 Gemini：高 / 最大思考降为适中']]));
+    body.append(hint('上传的 Lin2.5 / 2.6 均为 auto，可保持“沿用当前参数”。可选降档只用于已识别的 Gemini 文本型号：3.0 Pro 用 low，其他支持型号用 medium；图像与未知型号不猜测。渠道仍可能忽略参数。'));
+    body.append(checkbox('启用发送与接口取证（可查看实际发送提示）', 'captureNetwork'));
+    body.append(checkbox('Lin2.6交付保护：简短前置摘要＋组件完整性', 'deliveryGuard'));
+    body.append(hint('按实际启用的条目添加交付约束，保留13项核对，不展开详细推演。只影响当前请求；不覆盖预设，不自动重试。STOP也可能只交付了注释，原始文本长度不能证明有正文。'));
     body.append(checkbox('对“继续补全”也加提示（默认关闭）', 'enhanceContinue'));
+    body.append(hint('渠道排查：在酒馆原生连接设置中关闭流式，再手动重试一次。必须在生成前切换；仅修改请求中的 stream 字段会使酒馆解析方式与响应不一致。取证现在可识别无标头 SSE、JSON 及协议错配。'));
     body.append(hint('原生继续预填充、后台摘要、用户代写、工具调用和 JSON 结构化请求会自动跳过。'));
     const advanced = element('details', { className: 'lpg-advanced' });
     advanced.append(element('summary', {}, '编辑承接提示'));
@@ -126,9 +204,17 @@ function mount() {
             : `本地自检：${REASONS[result.reason] || result.reason}`;
     });
     body.append(selftest, selfResult);
+    const audit = element('button', { type: 'button', className: 'menu_button lpg-button' }, '检查当前预设');
+    const auditResult = element('p', { className: 'lpg-hint lpg-audit', role: 'status' });
+    audit.addEventListener('click', () => { auditResult.textContent = controller.audit().join('\n') || '未发现这些已知风险；仍需实际请求诊断。'; });
+    body.append(audit, auditResult);
+    const inspect = element('button', { type: 'button', className: 'menu_button lpg-button' }, '检查当前回复（不调用模型）');
+    inspect.addEventListener('click', () => { auditResult.textContent = controller.inspectCurrent(); });
+    body.append(inspect);
     const preview = element('details', { className: 'lpg-advanced' });
     preview.append(element('summary', {}, '查看最近实际注入的文本'), element('pre', { className: 'lpg-preview' }));
     body.append(preview);
+    body.append(historyPanel());
     body.append(hint('关闭扩展开关即可停止后续注入。原预设、世界书、聊天记录和回复内容均由酒馆原流程保存。'));
     panel.append(body);
     host.append(panel);
@@ -157,13 +243,15 @@ export function onEnable() {
     globalThis[INSTANCE_KEY]?.dispose?.();
     globalThis[INSTANCE_KEY] = { dispose: onDisable };
     lastView = undefined;
+    selectedRecord = '';
     controller = createController({ getContext: context, getSettings: settings, onStatus: updateStatus });
     mount();
     const ctx = context();
     const ready = (ctx.eventTypes || ctx.event_types)?.APP_READY;
     if (ready) {
-        pendingReady = { event: ready, fn: mount };
-        ctx.eventSource.on(ready, mount);
+        const readyHandler = () => { controller?.restoreHistory(); mount(); };
+        pendingReady = { event: ready, fn: readyHandler };
+        ctx.eventSource.on(ready, readyHandler);
     }
 }
 
