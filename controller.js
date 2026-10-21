@@ -1,7 +1,7 @@
-import { planInjection, REASONS, VERSION, normalizeSettings, getLinState } from './core.js?v=1.2.2';
-import { auditPreset, captureInjection, createHistory, planReasoning, requestKey, requestMeta, recordDiagnosis } from './diagnostics.js?v=1.2.2';
-import { installObserver } from './observer.js?v=1.2.2';
-import { analyzeOutput, structureDiagnosis } from './structure.js?v=1.2.2';
+import { planInjection, REASONS, VERSION, normalizeSettings, getLinState } from './core.js?v=1.2.4';
+import { auditPreset, captureInjection, createHistory, planReasoning, requestKey, requestMeta, recordDiagnosis } from './diagnostics.js?v=1.2.4';
+import { installObserver } from './observer.js?v=1.2.4';
+import { analyzeOutput, structureDiagnosis } from './structure.js?v=1.2.4';
 
 export function createController({ getContext, getSettings, onStatus = () => {}, networkTarget = globalThis }) {
     const ctx = getContext();

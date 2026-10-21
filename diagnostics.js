@@ -1,6 +1,6 @@
-import { getLinState, normalizeSettings, plainText, VERSION } from './core.js?v=1.2.2';
-import { deliveryProfile } from './delivery.js?v=1.2.2';
-import { structureDiagnosis } from './structure.js?v=1.2.2';
+import { getLinState, normalizeSettings, plainText, VERSION } from './core.js?v=1.2.4';
+import { deliveryProfile } from './delivery.js?v=1.2.4';
+import { structureDiagnosis } from './structure.js?v=1.2.4';
 
 export const HISTORY_KEY = 'lin_prefill_guard_history_v2';
 export const HISTORY_LIMIT = 50;
@@ -110,8 +110,9 @@ export function auditPreset(preset = {}, request = {}) {
     if (!lin.known) notes.push('未识别到 Lin 承接条目；请核对当前实际加载的预设。');
     else if (lin.active === false) notes.push('Lin 承接条目已关闭。');
     const profile = deliveryProfile(preset, request.type || 'normal');
+    if (profile.cotConflict) notes.push(`同时启用了 ${profile.cotSources.length} 套Lin_CoT：${profile.cotSources.map(x => x.variant).join('、')}；重复规则可能增加预算与格式冲突。插件不擅自关闭条目，请只保留需要的一套。`);
     if (profile.known && profile.cotEnabled) notes.push('Lin2.6启用了前置Lin_CoT注释；注释文本会消耗生成预算，旧版“正文字符数”包含这类文本，不能据此认定已有正文。');
-    if (profile.known && profile.cotEnabled && !profile.sceneEnabled) notes.push('可选场景条目关闭：其专属阶段和停笔条件不应通过CoT被重新启用。');
+    if (profile.known && profile.cotEnabled && !profile.sceneEnabled) notes.push('固定ID对应的可选场景条目关闭；未启用模块的专属要求不应由CoT间接启用。世界书或替代条目是否另有要求，需以实际请求为准。');
     const stops = Array.isArray(request.stop) ? request.stop : typeof request.stop === 'string' ? [request.stop] : [];
     if (stops.some(x => typeof x === 'string' && /-->|<\/(?:content|Lin_\w+)>/.test(x))) notes.push('停止序列包含注释或组件结束标记，可能在正文前或组件中结束生成；插件只提示，不擅自删除自定义停止序列。');
     return notes;
@@ -136,7 +137,8 @@ export function responseDiagnosis(stats = {}) {
     if (stats.aborted) return '请求已中止；不据此判断模型空回。';
     if (stats.networkError) return '网络请求失败；没有取得可分析的响应。';
     if (stats.httpStatus >= 400 || stats.apiError) return `接口错误${stats.httpStatus ? `（HTTP ${stats.httpStatus}）` : ''}；查看酒馆原错误提示。`;
-    if (stats.blockReason || /SAFETY|PROHIBITED|BLOCKLIST|RECITATION|CONTENT_FILTER/i.test(stats.finishReason || '')) return `接口报告拦截或限制：${stats.blockReason || stats.finishReason}。`;
+    if (stats.blockReason || /SAFETY|PROHIBITED|BLOCKLIST|RECITATION|CONTENT_FILTER|SPII|MODEL_ARMOR/i.test(stats.finishReason || '')) return `接口报告拦截或限制：${stats.blockReason || stats.finishReason}；不是已证实的token耗尽或网络断流。插件不能解除服务端限制，不自动续写或重试。${structureDiagnosis(stats.output) ? `附带结构问题：${structureDiagnosis(stats.output)}。` : ''}`;
+    if (stats.incomplete && !/MAX_TOKENS|LENGTH/i.test(stats.finishReason || '')) return '接口标记响应未完成，具体原因未提供；不能直接认定输出预算耗尽。';
     if (stats.refusal && !stats.visibleChars) return '接口返回了拒绝字段，未检测到正文；这与没有返回数据不同。';
     const structural = structureDiagnosis(stats.output);
     if (stats.output?.onlyNotes) return `接口文本字段 ${stats.visibleChars || 0} 字符，其中Lin_CoT ${stats.output.cotChars} 字符；${structural}。${/^(?:STOP|END_TURN)$/i.test(stats.finishReason || '') ? '渠道报告STOP/正常结束，但这不等于正文已交付。' : /MAX_TOKENS|LENGTH/i.test(stats.finishReason || '') ? '渠道同时报告输出上限；思考/注释阶段可能已耗尽预算。' : '还需结合结束原因判断提前停写或传输中断。'}`;
@@ -145,6 +147,7 @@ export function responseDiagnosis(stats = {}) {
     if (stats.captureLimited && stats.visibleChars > 0) return `已识别部分文本 ${stats.visibleChars} 字符，但取证不完整（${stats.limitReason === 'read-error' ? '读取中断' : '受限或被停止'}），不能确认回复完整。`;
     if (stats.protocolMismatch) return `请求与响应协议不一致：${stats.protocolMismatch === 'stream-request-non-sse' ? '请求流式，却收到 JSON / NDJSON；可先在酒馆原生设置关闭流式再重试' : '请求 JSON，却收到 SSE；检查渠道协议'}。已识别正文 ${stats.visibleChars || 0} 字符，不能据此认定模型空回。`;
     if (stats.streamMessageEnvelope) return `SSE 帧使用 message 而非 delta 字段；检测到正文 ${stats.visibleChars || 0} 字符，需检查渠道流式格式，或在酒馆关闭流式后排查。`;
+    if (stats.responseComplete && stats.recognized && !stats.parseErrors && stats.visibleChars > 0 && !stats.finishReason) return `收到 ${stats.visibleChars} 字符原始文本，但渠道未提供结束原因；${stats.doneMarker ? 'DONE只说明流已结束' : '读取结束'}，不能确认正文完整，也不能单凭短回复判断拒绝。`;
     if (stats.visibleChars > 0) return `接口文本字段 ${stats.visibleChars} 字符${stats.output?.commentChars ? `（注释 ${stats.output.commentChars}；注释外 ${stats.output.nonCommentChars}）` : ''}${/MAX_TOKENS|LENGTH/i.test(stats.finishReason || '') ? '，但达到输出上限，可能截断' : ''}${stats.captureLimited || stats.parseErrors ? '；取证不完整，该数值仅包含已识别部分' : ''}；文本长度不等于故事正文已完整交付。`;
     if (stats.captureLimited) return `取证未完成（${stats.limitReason === 'read-error' ? '读取中断' : '容量、时间限制或观察被停止'}）；尚不能据此判断空回。`;
     if (stats.responseComplete && stats.receivedBytes === 0) return 'HTTP 响应体为零字节；没有取得模型正文或结束原因。';
@@ -156,13 +159,44 @@ export function responseDiagnosis(stats = {}) {
 }
 
 /** Keep saved-text evidence visible even when a later clone inspection finishes. */
+export function recordStatus(record = {}) {
+    const w = record.wire || {};
+    if (w.aborted) return { label: '请求已中止', state: 'warn' };
+    if (w.networkError || w.httpStatus >= 400 || w.apiError) return { label: '请求失败', state: 'warn' };
+    if (w.blockReason || /SAFETY|PROHIBITED|BLOCKLIST|RECITATION|CONTENT_FILTER|SPII|MODEL_ARMOR/i.test(w.finishReason || ''))
+        return { label: '服务端限制', state: 'warn' };
+    if (/MAX_TOKENS|LENGTH/i.test(w.finishReason || ''))
+        return { label: '输出预算结束', state: 'warn' };
+    if (w.incomplete) return { label: '接口响应未完成', state: 'warn' };
+    const output = record.rendered?.output || w.output;
+    if (w.missingTerminal || w.captureLimited || w.parseErrors) return { label: '取证不完整', state: 'warn' };
+    if (output?.onlyNotes) return { label: '尚无正文', state: 'warn' };
+    if (structureDiagnosis(output)) return { label: '结构未完成', state: 'warn' };
+    if (w.toolCalls) return { label: '工具调用', state: 'idle' };
+    if ((record.rendered?.chars === 0 && record.rendered?.reasoningChars > 0)
+        || (w.visibleChars === 0 && (w.reasoningChars > 0 || w.thoughtTokens > 0)))
+        return { label: '尚无正文', state: 'warn' };
+    if (w.responseComplete && !w.finishReason) return { label: '结束原因未知', state: 'warn' };
+    if (w.finishReason) return { label: '已收到结束原因', state: 'idle' };
+    if (record.dispatch) return { label: '等待结束证据', state: 'idle' };
+    return { label: record.applied ? '已组装' : '未注入', state: 'idle' };
+}
+
+export function profileMismatch(record = {}) {
+    const output = record.wire?.output || record.rendered?.output;
+    return record.deliveryProfile?.cotEnabled === false && output?.cotCount > 0
+        ? '条目识别与实际输出不一致：未识别到启用的固定CoT条目，但回复含Lin_CoT。可能来自其他条目、世界书或模型沿用格式；不能断言本轮没有CoT。'
+        : '';
+}
+
 export function recordDiagnosis(record = {}) {
     const lines = [];
+    if (record.wire) lines.push(responseDiagnosis(record.wire));
+    if (profileMismatch(record)) lines.push(profileMismatch(record));
     if (record.rendered) lines.push(record.rendered.chars > 0
         ? `酒馆已保存 ${record.rendered.chars} 字符原始文本${record.rendered.output ? `；Lin_CoT注释 ${record.rendered.output.cotChars} 字符；注释外文本 ${record.rendered.output.nonCommentChars} 字符` : '（旧记录未区分注释）'}。${structureDiagnosis(record.rendered.output) || '显示效果仍取决于正则与样式，不能仅由字符数确认正文完整。'}`
         : `酒馆保存的正文为空${record.rendered.reasoningChars ? '，有思考内容' : ''}。`);
-    if (record.wire) lines.push(responseDiagnosis(record.wire));
-    else if (record.lifecycle) lines.push(record.lifecycle);
+    if (!record.wire && record.lifecycle) lines.push(record.lifecycle);
     return lines.join('\n');
 }
 
@@ -171,7 +205,10 @@ export function formatRecord(record) {
     const lines = [`记录 ${record.id} · v${record.version || VERSION}`, `时间：${record.at}`, `类型：${record.type} · 模型：${record.request?.model || '未提供'}`, `组装：${record.explanation}`, `发送：${record.dispatch?.label || '未观察到浏览器发送，或未开启网络取证'}`];
     if (record.adjustment) lines.push(`本次思考参数：${record.adjustment.before} → ${record.adjustment.after}`);
     if (record.identification) lines.push(`条目识别：${record.identification}`);
-    if (record.deliveryProfile?.known) lines.push(`Lin2.6交付约束：${record.deliveryGuard ? '已加入本次请求' : '未加入'}；启用组件：${record.deliveryProfile.components.join('、') || '无'}；输入提示词 ${record.deliveryProfile.inputPromptChars} 字符（不是输出）。`);
+    if (record.deliveryProfile?.known) lines.push(`Lin2.6交付约束：${record.deliveryGuard ? '已加入本次请求' : '未加入'}；已识别的固定组件（非完整清单）：${record.deliveryProfile.components.join('、') || '未识别到'}；输入提示词 ${record.deliveryProfile.inputPromptChars} 字符（不是输出）。`);
+    if (record.deliveryProfile?.cotSources) lines.push(`按预设启用顺序识别CoT：${record.deliveryProfile.cotSources.map(x => `${x.variant}（${x.columns || '未知'}栏）`).join('、') || '未识别到启用条目'}；这不是后端实际执行证明。`);
+    if (record.wire?.emptyFinalSnapshot) lines.push('渠道最终空message帧未覆盖前面已收到的增量文本；原响应未被修改。');
+    if (profileMismatch(record)) lines.push(profileMismatch(record));
     if (record.presetState) lines.push(`设置快照：${record.presetState.promptCount} 条提示；识别=${record.presetState.known}；开关=${record.presetState.active ?? '未知'}`);
     if (record.wire) lines.push(`接口：${responseDiagnosis(record.wire)}`, `结束原因：${record.wire.finishReason || record.wire.blockReason || '渠道未提供'}`, `思考 token：${record.wire.thoughtTokens ?? '渠道未提供'} · 生成 token（渠道口径，可能含思考）：${record.wire.outputTokens ?? '渠道未提供'}`);
     if (record.wire?.transport) lines.push(`响应格式：${record.wire.transport}；Content-Type：${record.wire.contentType}；字节：${record.wire.receivedBytes}；SSE 帧：${record.wire.frames}；DONE：${record.wire.doneMarker ? '有' : '无'}；读取完成：${record.wire.responseComplete ? '是' : '否'}；解析错误：${record.wire.parseErrors}；取证耗时：${record.wire.durationMs ?? 0} ms`);

@@ -6,7 +6,7 @@
   "js": "index.js",
   "css": "style.css",
   "author": "Lin Prefill Guard contributors",
-  "version": "1.2.2",
+  "version": "1.2.4",
   "auto_update": false,
   "hooks": {
     "enable": "onEnable",

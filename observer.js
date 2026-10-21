@@ -1,11 +1,14 @@
 /** Read-only observation of ST's single chat endpoint. Never retries or rewrites a response. */
-import { analyzeOutput } from './structure.js?v=1.2.2';
+import { analyzeOutput } from './structure.js?v=1.2.4';
 const textBuffers = new WeakMap();
 const textValue = value => typeof value === 'string' ? value : Array.isArray(value)
     ? value.filter(p => !p?.thought && p?.type !== 'thinking').map(p => typeof p?.text === 'string' ? p.text : '').join('') : '';
 function observeText(stats, value, snapshot = false) {
     const text = textValue(value);
     const previous = textBuffers.get(stats) || '';
+    // Some adapters end with message.content=null/"" plus a finish reason.
+    // That frame does not retract text already delivered in previous deltas.
+    if (snapshot && !text && previous) { stats.emptyFinalSnapshot = true; return; }
     const combined = snapshot ? text : previous + text;
     textBuffers.set(stats, combined);
     stats.visibleChars = combined.length; // Legacy field: raw text, not visible story prose.

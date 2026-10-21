@@ -1,7 +1,6 @@
-import { DEFAULT_PREFILL, DEFAULT_NUDGE, SETTINGS_KEY, VERSION, REASONS, normalizeSettings, migrateSettings } from './core.js?v=1.2.2';
-import { createController } from './controller.js?v=1.2.2';
-import { formatRecord } from './diagnostics.js?v=1.2.2';
-import { structureDiagnosis } from './structure.js?v=1.2.2';
+import { DEFAULT_PREFILL, DEFAULT_NUDGE, SETTINGS_KEY, VERSION, REASONS, normalizeSettings, migrateSettings } from './core.js?v=1.2.4';
+import { createController } from './controller.js?v=1.2.4';
+import { formatRecord, recordStatus } from './diagnostics.js?v=1.2.4';
 
 const INSTANCE_KEY = Symbol.for('lin-prefill-guard.instance');
 let controller;
@@ -41,12 +40,9 @@ function updateStatus(view) {
     const state = normalizeSettings(settings());
     const last = lastView?.last;
     const badge = panel.querySelector('.lpg-badge');
-    const output = last?.rendered?.output || last?.wire?.output;
-    const incomplete = structureDiagnosis(output) || last?.wire?.missingTerminal;
-    const thinkingOnly = last?.rendered ? last.rendered.chars === 0 && last.rendered.reasoningChars > 0
-        : last?.wire?.recognized && last.wire.visibleChars === 0 && (last.wire.reasoningChars > 0 || last.wire.thoughtTokens > 0) && !last.wire.toolCalls;
-    badge.textContent = !state.enabled ? '已关闭' : output?.onlyNotes || thinkingOnly ? '尚无正文' : incomplete ? '疑似未完成' : last?.dispatch?.verified ? '已核对发送' : last?.applied ? '已组装' : last ? '未注入' : '等待请求';
-    badge.dataset.state = !state.enabled ? 'off' : last?.applied ? 'ok' : 'idle';
+    const outcome = last ? recordStatus(last) : { label: '等待请求', state: 'idle' };
+    badge.textContent = state.enabled ? outcome.label : '已关闭';
+    badge.dataset.state = state.enabled ? outcome.state : 'off';
     const status = panel.querySelector('.lpg-status');
     const lines = [];
     if (!state.enabled) lines.push('扩展当前关闭，下次请求不注入。以下为最近记录。');
@@ -75,7 +71,7 @@ function renderHistory() {
     const records = (lastView?.history || []).filter(r => !query || formatRecord(r).toLowerCase().includes(query));
     list.replaceChildren();
     for (const r of records) {
-        const label = `${new Date(r.at).toLocaleString()} · ${r.request?.model || r.type} · ${r.dispatch?.verified ? '已核对发送' : r.applied ? '已组装' : '未注入'} · ${r.id.slice(-8)}`;
+        const label = `${new Date(r.at).toLocaleString()} · ${r.request?.model || r.type} · ${recordStatus(r).label} · ${r.id.slice(-8)}`;
         list.append(element('option', { value: r.id }, label));
     }
     if (!records.some(r => r.id === selectedRecord)) selectedRecord = records[0]?.id || '';
@@ -174,8 +170,8 @@ function mount() {
     body.append(select('思考预算', 'reasoningMode', [['keep', '沿用当前参数'], ['balanced', '已识别 Gemini：高 / 最大思考降为适中']]));
     body.append(hint('上传的 Lin2.5 / 2.6 均为 auto，可保持“沿用当前参数”。可选降档只用于已识别的 Gemini 文本型号：3.0 Pro 用 low，其他支持型号用 medium；图像与未知型号不猜测。渠道仍可能忽略参数。'));
     body.append(checkbox('启用发送与接口取证（可查看实际发送提示）', 'captureNetwork'));
-    body.append(checkbox('Lin2.6交付保护：简短前置摘要＋组件完整性', 'deliveryGuard'));
-    body.append(hint('按实际启用的条目添加交付约束，保留13项核对，不展开详细推演。只影响当前请求；不覆盖预设，不自动重试。STOP也可能只交付了注释，原始文本长度不能证明有正文。'));
+    body.append(checkbox('Lin2.6系列交付保护：识别三种CoT＋组件完整性', 'deliveryGuard'));
+    body.append(hint('按本轮实际要求交付，不将固定ID清单当作全部组件。支持标准、中等、超长CoT；只依据启用顺序，不新增栏目或停笔要求。服务端限制优先报告，不自动重试或覆盖预设。'));
     body.append(checkbox('对“继续补全”也加提示（默认关闭）', 'enhanceContinue'));
     body.append(hint('渠道排查：在酒馆原生连接设置中关闭流式，再手动重试一次。必须在生成前切换；仅修改请求中的 stream 字段会使酒馆解析方式与响应不一致。取证现在可识别无标头 SSE、JSON 及协议错配。'));
     body.append(hint('原生继续预填充、后台摘要、用户代写、工具调用和 JSON 结构化请求会自动跳过。'));

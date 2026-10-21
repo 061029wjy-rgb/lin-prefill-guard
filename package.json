@@ -1,6 +1,6 @@
 {
   "name": "lin-prefill-guard",
-  "version": "1.2.2",
+  "version": "1.2.4",
   "private": true,
   "type": "module",
   "description": "SillyTavern request-time continuity cue with local diagnostics",
