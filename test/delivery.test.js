@@ -86,7 +86,8 @@ test('nameless Lin2.6 gets an actual delivery guard in both injection modes', ()
     const p = preset(); const original = structuredClone(p);
     for (const mode of ['user', 'pair']) {
         const result = planInjection(request(), { ...DEFAULTS, mode }, { preset: p });
-        assert.equal(result.deliveryGuard, true); assert.match(result.messages.at(-1).content, /500汉字/);
+        assert.equal(result.deliveryGuard, true); assert.match(result.messages.at(-1).content, /原有栏目、篇幅与创作约束/);
+        assert.doesNotMatch(result.messages.at(-1).content, /500汉字/);
         assert.match(result.messages.at(-1).content, /未启用/);
         assert.match(result.messages.at(-1).content, /不是新剧情/);
     }
@@ -138,7 +139,7 @@ for (const [env, guarded] of [['LIN25_PRESET_PATH', false], ['LIN26_PRESET_PATH'
             const result = planInjection({ type, messages, model: 'gemini-4-argon' }, { ...DEFAULTS, mode }, { preset: p });
             assert.equal(result.applied, true); assert.equal(result.deliveryGuard, guarded);
             assert.equal(result.removedOriginal, true);
-            if (guarded) assert.match(result.messages.at(-1).content, /500汉字/);
+            if (guarded) assert.match(result.messages.at(-1).content, /原有栏目、篇幅与创作约束/);
         }
         assert.equal(JSON.stringify(p), before);
     });

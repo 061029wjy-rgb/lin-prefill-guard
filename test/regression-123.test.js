@@ -16,7 +16,7 @@ test('provider SAFETY takes precedence over partial comment in status and summar
 });
 test('MAX_TOKENS is distinct from SAFETY and STOP', () => {
     assert.equal(recordStatus({wire:{finishReason:'MAX_TOKENS'}}).label,'输出预算结束');
-    assert.equal(recordStatus({wire:{finishReason:'STOP'}}).label,'已收到结束原因');
+    assert.equal(recordStatus({wire:{finishReason:'STOP'}}).label,'接口已结束·正文待核');
 });
 test('DONE without finish reason is not a proven successful response', () => {
     const wire = { responseComplete: true, recognized: true, visibleChars: 205, doneMarker: true };
@@ -53,7 +53,7 @@ test('2.6.3 revision and replaced CoT ID use conditional delivery without mutati
 });
 test('disabled known CoT does not activate fixed-column instructions', () => {
     assert.doesNotMatch(deliveryCue({...profile,cotEnabled:false}),/保留原有栏目|13项/);
-    assert.match(deliveryCue({...profile,cotEnabled:true}),/500汉字/);
+    assert.match(deliveryCue({...profile,cotEnabled:true}),/原有栏目、篇幅与创作约束/);
 });
 test('actual 2026-10-21 log regression (no private log bundled)', {skip:!process.env.LIN_HISTORY_PATH}, () => {
     const records = JSON.parse(fs.readFileSync(process.env.LIN_HISTORY_PATH,'utf8')).records;

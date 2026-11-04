@@ -133,7 +133,8 @@ for(let mask=0;mask<8;mask++)for(const mode of ['user','pair'])for(const type of
         const originalCue=p.prompts.find(x=>x.identifier===LIN_PROMPT_ID).content;
         assert.deepEqual(result.messages.slice(0,-result.injected.length),req.messages.filter(x=>!(x.role==='assistant'&&x.content===originalCue)));
         assert.doesNotMatch(result.messages.at(-1).content,/当前启用组件：|无附加组件|剧情停在交互节点/);
-        if(enabled.length)assert.match(result.messages.at(-1).content,/500汉字/);
+        if(enabled.length)assert.match(result.messages.at(-1).content,/原有栏目、篇幅与创作约束/);
+        assert.doesNotMatch(result.messages.at(-1).content,/500汉字/);
         const again=planInjection({...req,messages:result.messages},{...DEFAULTS,mode},{preset:p});
         assert.equal(again.changed,false);
     });
