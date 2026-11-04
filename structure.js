@@ -59,11 +59,39 @@ export function analyzeOutput(value = '') {
     }).length;
     const onlyNotes = !!text.trim() && (commentChars > 0 || embeddedThinkingChars > 0)
         && !withoutThoughts.replace(/<[^>]*>/g, '').trim() && !/```|~~~/.test(withoutComments);
+    const ending = analyzeEnding(withoutThoughts, withoutComments);
     return { rawChars: text.length, commentChars, cotChars, cotCount, closedCotCount,
         nonCommentChars, nonThoughtChars, embeddedThinkingChars, onlyNotes,
         openComment: commentStart >= 0, openThinking, openFence: !!inCode,
-        optionBlocks: optionBlocks.length, incompleteOptions,
+        optionBlocks: optionBlocks.length, incompleteOptions, ending,
         openTags: [...open].filter(([, count]) => count > 0).map(([name]) => name).slice(0, 16) };
+}
+
+/** Weak punctuation evidence, never semantic completeness. No reply text is retained. */
+function analyzeEnding(markup, source) {
+    const contents = [...markup.matchAll(/<content\b[^>]*>([\s\S]*?)(?:<\/content\s*>|$)/gi)];
+    const scope = contents.length ? 'content' : 'plain';
+    const unchecked = { checked: false, scope, signals: [] };
+    // A final code block, HTML component or Markdown table/list is not prose.
+    if (!contents.length && (/>\s*$/.test(markup) || /(?:^|\n)\s*(?:`{3,}|~{3,})\s*$/.test(source))) return unchecked;
+    const body = (contents.length ? contents.at(-1)[1] : markup).trim();
+    if (!body || /<[^>]*$/.test(body)) return unchecked;
+    const lastLine = body.split(/\r?\n/).at(-1).trim();
+    if (/^(?:#{1,6}\s|[-*+]\s|\d+[.)、]\s?|\||>)/.test(lastLine)) return unchecked;
+    const plain = body.replace(/<[^>]*>/g, '').trim();
+    // Avoid treating short answers, single words and non-Chinese formats as cuts.
+    if (plain.length < 80 || !/[\u3400-\u9fff]/.test(plain) || !/[。！？.!?]/.test(plain)) return unchecked;
+    const tail = plain.replace(/[\s”’"'」』）)】\]*_]+$/g, '');
+    const signals = [];
+    if (/[，,、：:；;—-]$/.test(tail)) signals.push('trailing-separator');
+    else if (/[\u3400-\u9fffA-Za-z0-9]$/.test(tail)) signals.push('no-terminal-punctuation');
+    return { checked: true, scope, signals };
+}
+
+export function endingDiagnosis(output) {
+    const signals = output?.ending?.signals || [];
+    if (!signals.length) return '';
+    return `疑似句尾未完：${signals.includes('trailing-separator') ? '正文以逗号、冒号等非句末符号收尾' : '较长正文末尾没有句末标点'}。这是弱提示，也可能是文风或格式；需核对实际末句，不自动续写。`;
 }
 
 export function structureDiagnosis(output) {

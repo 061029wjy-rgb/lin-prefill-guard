@@ -1,6 +1,6 @@
-import { DEFAULT_PREFILL, DEFAULT_NUDGE, SETTINGS_KEY, VERSION, REASONS, normalizeSettings, migrateSettings } from './core.js?v=1.2.4';
-import { createController } from './controller.js?v=1.2.4';
-import { formatRecord, recordStatus } from './diagnostics.js?v=1.2.4';
+import { DEFAULT_PREFILL, DEFAULT_NUDGE, SETTINGS_KEY, VERSION, REASONS, normalizeSettings, migrateSettings } from './core.js?v=1.2.5';
+import { createController } from './controller.js?v=1.2.5';
+import { formatRecord, recordStatus } from './diagnostics.js?v=1.2.5';
 
 const INSTANCE_KEY = Symbol.for('lin-prefill-guard.instance');
 let controller;
@@ -171,7 +171,7 @@ function mount() {
     body.append(hint('上传的 Lin2.5 / 2.6 均为 auto，可保持“沿用当前参数”。可选降档只用于已识别的 Gemini 文本型号：3.0 Pro 用 low，其他支持型号用 medium；图像与未知型号不猜测。渠道仍可能忽略参数。'));
     body.append(checkbox('启用发送与接口取证（可查看实际发送提示）', 'captureNetwork'));
     body.append(checkbox('Lin2.6系列交付保护：识别三种CoT＋组件完整性', 'deliveryGuard'));
-    body.append(hint('按本轮实际要求交付，不将固定ID清单当作全部组件。支持标准、中等、超长CoT；只依据启用顺序，不新增栏目或停笔要求。服务端限制优先报告，不自动重试或覆盖预设。'));
+    body.append(hint('支持标准、中等、超长CoT，篇幅沿用所选条目，不再统一压到500字。重抽／重生成明确重新回答；user / pair模式及自定义文本保留。句尾检查仅提供疑似提示，STOP不代表正文写完，不自动重试。'));
     body.append(checkbox('对“继续补全”也加提示（默认关闭）', 'enhanceContinue'));
     body.append(hint('渠道排查：在酒馆原生连接设置中关闭流式，再手动重试一次。必须在生成前切换；仅修改请求中的 stream 字段会使酒馆解析方式与响应不一致。取证现在可识别无标头 SSE、JSON 及协议错配。'));
     body.append(hint('原生继续预填充、后台摘要、用户代写、工具调用和 JSON 结构化请求会自动跳过。'));

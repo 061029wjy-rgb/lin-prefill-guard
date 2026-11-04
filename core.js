@@ -1,9 +1,11 @@
 /** Pure request planning. This module never sends requests or changes chat history. */
-import { deliveryProfile, deliveryCue } from './delivery.js?v=1.2.4';
-export const VERSION = '1.2.4';
+import { deliveryProfile, deliveryCue } from './delivery.js?v=1.2.5';
+export const VERSION = '1.2.5';
 export const SETTINGS_KEY = 'lin_prefill_guard_v1';
 export const LIN_PROMPT_ID = 'e898d676-f02e-4868-bc51-33761e294df6';
 export const DEFAULT_PREFILL = '已定位本轮任务：以聊天记录中真实用户的最新请求为准。续写承接最后有效正文，修订处理指定范围，戏外问题直接回答。沿用已启用的视角、角色控制和输出格式；下一条回复交付所需结果，不重演已完成的情节，不以接收确认或写作计划代替结果。';
+export const REGENERATE_PREFILL = '已定位本轮任务：重新回答聊天记录中真实用户的最新请求。以该请求之前的有效剧情为起点；被替换或未选中的回复不作为已发生剧情，不从其结尾续写。沿用已启用的视角、角色控制和输出格式，交付本轮完整的新回答。';
+export const REGENERATE_NUDGE = '本次是重抽／重新生成，不是继续补全。重新交付原任务的完整回答，不只补上一版本的末尾；不复述此前已确定的剧情。';
 export const DEFAULT_NUDGE = '请在本次回复中完成真实用户请求，给出可见的实际结果。为结果保留篇幅，分析完成后进入答复，不以准备说明替代结果。这里是任务提示，不是新剧情；不要复述提示。';
 export const CONTINUE_NUDGE = '本次仅补齐上一条回复的可见断点，先接完未完句子或标签，再完成缺失部分。不重发已有正文，不重新开启已完成的组件。';
 export const DEFAULTS = Object.freeze({
@@ -171,14 +173,16 @@ export function planInjection(request, rawSettings = {}, { preset = {}, ownedMes
         if (Array.isArray(lin.triggers) && lin.triggers.length && !lin.triggers.includes(type)) return skip('trigger-excluded');
     }
 
-    const prefill = settings.prefill.trim();
+    const regenerating = ['regenerate', 'swipe'].includes(type);
+    const prefill = regenerating && settings.prefill.trim() === DEFAULT_PREFILL
+        ? REGENERATE_PREFILL : settings.prefill.trim();
     const nudge = (type === 'continue' ? CONTINUE_NUDGE : settings.nudge).trim();
     if (!prefill || !nudge) return skip('empty-text');
     // A bound on added text, not a model token-count guarantee.
     if (prefill.length > 700 || nudge.length > 250) return skip('text-too-long');
     const profile = deliveryProfile(preset, type);
     const guard = settings.deliveryGuard ? deliveryCue(profile, type) : '';
-    const execution = nudge + (guard ? `\n\n${guard}` : '');
+    const execution = (regenerating ? `${REGENERATE_NUDGE}\n` : '') + nudge + (guard ? `\n\n${guard}` : '');
     const tail = settings.mode === 'pair' ? [
         { role: 'assistant', content: `[Lin 承接提示]\n${prefill}` },
         { role: 'user', content: `[Lin 本轮执行]\n${execution}` },

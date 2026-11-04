@@ -1,5 +1,5 @@
 /** Read-only observation of ST's single chat endpoint. Never retries or rewrites a response. */
-import { analyzeOutput } from './structure.js?v=1.2.4';
+import { analyzeOutput } from './structure.js?v=1.2.5';
 const textBuffers = new WeakMap();
 const textValue = value => typeof value === 'string' ? value : Array.isArray(value)
     ? value.filter(p => !p?.thought && p?.type !== 'thinking').map(p => typeof p?.text === 'string' ? p.text : '').join('') : '';
