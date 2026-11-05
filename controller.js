@@ -1,9 +1,10 @@
-import { planInjection, REASONS, VERSION, normalizeSettings, getLinState } from './core.js?v=1.2.5';
-import { auditPreset, captureInjection, createHistory, planReasoning, requestKey, requestMeta, recordDiagnosis } from './diagnostics.js?v=1.2.5';
-import { installObserver } from './observer.js?v=1.2.5';
-import { analyzeOutput, structureDiagnosis } from './structure.js?v=1.2.5';
+import { planInjection, REASONS, VERSION, normalizeSettings, getLinState } from './core.js?v=1.2.6';
+import { auditPreset, captureInjection, createHistory, planReasoning, requestKey, requestMeta, recordDiagnosis } from './diagnostics.js?v=1.2.6';
+import { installObserver } from './observer.js?v=1.2.6';
+import { analyzeOutput, structureDiagnosis, textDigest } from './structure.js?v=1.2.6';
+import { createRecovery } from './recovery.js?v=1.2.6';
 
-export function createController({ getContext, getSettings, onStatus = () => {}, networkTarget = globalThis }) {
+export function createController({ getContext, getSettings, onStatus = () => {}, networkTarget = globalThis, hasDraft = () => false }) {
     const ctx = getContext();
     const events = ctx.eventTypes || ctx.event_types || {};
     const bus = ctx.eventSource;
@@ -13,14 +14,27 @@ export function createController({ getContext, getSettings, onStatus = () => {},
     const requestRecords = new WeakMap();
     const history = createHistory(() => getContext().accountStorage);
     const pending = [];
+    const unassociated = record => record?.origin === 'unassociated' || record?.reason === 'unmatched-dispatch';
+    function preferredRecord() {
+        const records = history.list();
+        return records.find(r => !unassociated(r)) || records[0] || null;
+    }
     let disposed = false;
-    let last = history.list()[0] || null;
+    let last = preferredRecord();
     let lastSkip = null;
-    let response = null;
+    let response = last ? recordDiagnosis(last) : null;
     let active = null;
+    let generating = false;
+    let manualContinue = false;
+    let recoveryRunning = false;
+    let savedTarget = null;
+    const recovery = createRecovery({ getContext, hasDraft, isBusy: () => disposed || generating,
+        getRecord: (chat, message) => savedTarget?.chat === chat && savedTarget.message === message
+            && savedTarget.text === message.mes && savedTarget.swipe === message.swipe_id
+            ? history.list().find(r => r.id === savedTarget.id) : null });
     let sequence = 0;
     const id = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${++sequence}`;
-    const snapshot = () => ({ last, lastSkip, response, version: VERSION, history: history.list(), storageWarning: history.warning(), networkAvailable: observer.available });
+    const snapshot = () => ({ last, lastSkip, response, generating, version: VERSION, history: history.list(), storageWarning: history.warning(), networkAvailable: observer.available });
 
     function publish() { try { onStatus(snapshot()); } catch { /* UI errors never block generation. */ } }
     function patch(recordId, values) {
@@ -33,7 +47,10 @@ export function createController({ getContext, getSettings, onStatus = () => {},
         try {
             const context = getContext();
             const preset = context.chatCompletionSettings || {};
-            const settings = getSettings();
+            const priorRef = request && requestRecords.get(request);
+            const forcedContinue = request?.type === 'continue' && (manualContinue || priorRef?.manualContinue === true);
+            const settings = forcedContinue ? { ...getSettings(), enhanceContinue: true } : getSettings();
+            if (request?.type === 'continue') manualContinue = false;
             const result = planInjection(request, settings, { preset, ownedMessages });
             const lin = getLinState(preset);
             let adjustment = result.applied ? planReasoning(request, settings) : null;
@@ -44,17 +61,18 @@ export function createController({ getContext, getSettings, onStatus = () => {},
             };
             if (result.changed && !writable('messages')) throw new Error('immutable request');
             if (adjustment && !writable('reasoning_effort')) adjustment = null;
-            if (result.changed) {
-                request.messages = result.messages;
-                result.injected.forEach(m => ownedMessages.add(m));
-            }
-            if (adjustment) request.reasoning_effort = adjustment.after;
-            const priorRef = request && requestRecords.get(request);
+            // Finish all fallible planning/serialization before changing the host payload.
+            const planned = result.changed || adjustment ? { ...request,
+                ...(result.changed ? { messages: result.messages } : {}),
+                ...(adjustment ? { reasoning_effort: adjustment.after } : {}) } : request;
+            const key = requestKey(planned);
             const prior = priorRef && (history.list().find(r => r.id === priorRef.id) || priorRef);
             const report = {
                 ...prior,
                 id: prior?.id || id(), at: prior?.at || new Date().toISOString(), version: VERSION,
                 type: result.type, applied: result.applied, reason: result.reason,
+                origin: 'assembled',
+                manualContinue: forcedContinue,
                 identification: result.identification || 'none',
                 deliveryGuard: result.deliveryGuard === true,
                 deliveryProfile: result.profile || null,
@@ -65,7 +83,7 @@ export function createController({ getContext, getSettings, onStatus = () => {},
                 tailRoles: result.tailRoles || [], note: result.note || prior?.note || '',
                 injected: result.applied ? result.injected.map(m => ({ role: m.role, content: m.content })) : [],
                 preview: result.applied ? result.injected.map(m => `${m.role}\n${m.content}`).join('\n\n') : '',
-                request: requestMeta(request), warnings: auditPreset(preset, request),
+                request: requestMeta(planned), warnings: auditPreset(preset, planned),
                 adjustment: adjustment || prior?.adjustment || null,
             };
             if (result.identification === 'outgoing-exact-2.4') {
@@ -74,11 +92,15 @@ export function createController({ getContext, getSettings, onStatus = () => {},
             }
             if (['quiet', 'impersonate'].includes(result.type)) { lastSkip = report; publish(); return; }
             if (!normalizeSettings(settings).enabled) { publish(); return; }
+            if (result.changed) {
+                request.messages = result.messages;
+                result.injected.forEach(m => ownedMessages.add(m));
+            }
+            if (adjustment) request.reasoning_effort = adjustment.after;
             last = report;
             if (!prior) response = null;
             history.put(report);
             requestRecords.set(request, report);
-            const key = requestKey(request);
             const item = { id: report.id, key, injected: report.injected, type: result.type, model: report.request.model, at: Date.now() };
             const existing = pending.findIndex(x => x.id === report.id);
             if (existing >= 0) pending.splice(existing, 1);
@@ -114,14 +136,20 @@ export function createController({ getContext, getSettings, onStatus = () => {},
                 if (matches.length === 1) { candidate = matches[0]; correlation = 'injection-match'; }
             }
             if (!candidate) {
+                const related = recent.filter(x => x.type === (request.type || 'normal') && x.model === String(request.model || ''));
                 const record = { id: id(), version: VERSION, at: new Date().toISOString(), type: request.type || 'normal', applied: false,
+                    origin: 'unassociated',
                     reason: 'unmatched-dispatch', explanation: exact.length > 1
                         ? '观察到发送，但存在多个相同的待发送请求；不猜测属于哪条记录。'
                         : '观察到发送，但没有唯一匹配的组装记录；可能绕过了事件或消息被改写。',
                     request: requestMeta(request), injected: [], warnings: [],
-                    possibleAssemblyIds: recent.filter(x => x.type === (request.type || 'normal') && x.model === String(request.model || '')).map(x => x.id),
+                    possibleAssemblyIds: related.map(x => x.id),
                     dispatch: { at: new Date().toISOString(), label: '已观察到发送；无法核实本插件注入', injected: [], correlation: 'unmatched' } };
-                history.put(record); last = record; response = null; publish(); return record.id;
+                history.put(record);
+                // An unrelated helper request must not replace the active story's
+                // badge or become the target of a saved-message/recovery action.
+                if (!last || related.some(x => x.id === active?.id)) { last = record; response = null; }
+                publish(); return record.id;
             }
             const index = pending.indexOf(candidate);
             if (index >= 0) pending.splice(index, 1);
@@ -140,10 +168,11 @@ export function createController({ getContext, getSettings, onStatus = () => {},
         onError(recordId, wire) { patch(recordId, { wire }); },
     });
 
-    function lateRegistration() {
+    function lateRegistration(type, _options, dryRun) {
         if (!disposed && requestEvent && typeof bus.makeLast === 'function') bus.makeLast(requestEvent, handleRequest);
+        if (type !== undefined && !dryRun && !['quiet', 'impersonate'].includes(type)) generating = true;
     }
-    function onMessage(messageId, type) {
+    async function onMessage(messageId, type) {
         if (disposed || !active || ['quiet', 'impersonate', 'first_message'].includes(type)) return;
         // saveReply normalizes regenerate to normal and may report continuation as appendFinal.
         const compatibleTypes = { normal: ['normal'], regenerate: ['regenerate', 'normal'],
@@ -158,25 +187,34 @@ export function createController({ getContext, getSettings, onStatus = () => {},
         if (['normal', 'regenerate'].includes(active.type) && index < active.baselineLength) return;
         if (['swipe', 'continue'].includes(active.type) && index !== active.baselineLength - 1) return;
         const text = typeof message.mes === 'string' ? message.mes : '';
+        const recordId = active.id;
+        const target = { id: recordId, chat: context.chat, message, text, swipe: message.swipe_id };
         const chars = text.trim().length;
         const output = analyzeOutput(text);
         const reasoningChars = typeof message.extra?.reasoning === 'string' ? message.extra.reasoning.length : 0;
         const evidence = structureDiagnosis(output);
         const lifecycle = evidence || (chars ? `酒馆保存了 ${chars} 字符原始文本；显示效果仍取决于正则与样式。` : reasoningChars
             ? '酒馆保存了思考内容，但正文为空。请查看接口诊断。' : '酒馆保存的是空正文。请查看接口诊断。');
-        patch(active.id, { rendered: { chars, reasoningChars, output }, lifecycle });
+        savedTarget = target;
+        const digest = await textDigest(text);
+        // A late hash must not replace a newer edit/swipe or a switched chat.
+        if (disposed || savedTarget !== target || getContext().chat !== target.chat
+            || message.mes !== text || message.swipe_id !== target.swipe) return;
+        patch(recordId, { rendered: { chars, reasoningChars, output, textDigest: digest }, lifecycle });
     }
     function onEnd() {
+        generating = false;
         if (!active) return;
         active.ended = true;
         const record = history.list().find(r => r.id === active.id);
         if (!record?.rendered) patch(active.id, { lifecycle: '生成已结束，尚未观察到正文保存事件；检查接口记录。稍后到达的正文事件仍会更新此记录。' });
     }
     function onStop() {
-        if (active) patch(active.id, { lifecycle: '用户停止或客户端中止了生成。' });
+        generating = false;
+        if (active) patch(active.id, { clientStopped: true, lifecycle: '用户停止或客户端中止了生成。' });
         active = null;
     }
-    function onChatChanged() { active = null; }
+    function onChatChanged() { active = null; savedTarget = null; recovery.invalidate(); }
     function subscribe(event, fn) { if (event) { bus.on(event, fn); subscriptions.push([event, fn]); } }
     if (!bus || typeof bus.on !== 'function' || !requestEvent) {
         last = { applied: false, reason: 'unsupported-client', explanation: '当前酒馆未提供所需的 Chat Completion 事件。请确认版本或分支兼容。', injected: [], preview: '' };
@@ -192,6 +230,14 @@ export function createController({ getContext, getSettings, onStatus = () => {},
     }
     return {
         snapshot,
+        prepareRecovery: () => recovery.prepare(),
+        async runRecovery(plan, action) {
+            if (recoveryRunning) return { ok: false, message: '当前补全或重生成仍在进行，未重复调用。' };
+            recoveryRunning = true;
+            if (action === 'continue') manualContinue = true;
+            try { return await recovery.run(plan, action); }
+            finally { manualContinue = false; recoveryRunning = false; }
+        },
         preview: request => planInjection(request, getSettings(), { preset: getContext().chatCompletionSettings || {} }),
         audit: () => auditPreset(getContext().chatCompletionSettings || {}),
         inspectCurrent() {
@@ -204,11 +250,16 @@ export function createController({ getContext, getSettings, onStatus = () => {},
             history.put(report); last = report; response = recordDiagnosis(report); publish();
             return response;
         },
-        restoreHistory() { history.load(); if (!last?.id) last = history.list()[0] || last; publish(); },
-        clearHistory() { history.clear(); pending.length = 0; active = null; last = null; response = null; publish(); },
+        restoreHistory() {
+            history.load();
+            if (!last?.id || unassociated(last)) { last = preferredRecord() || last; response = last ? recordDiagnosis(last) : null; }
+            publish();
+        },
+        clearHistory() { history.clear(); pending.length = 0; active = null; savedTarget = null; recovery.invalidate(); last = null; response = null; publish(); },
         idle: () => observer.idle(),
         dispose() {
             disposed = true;
+            recovery.invalidate();
             observer.dispose();
             const remove = bus?.removeListener || bus?.off;
             if (remove) subscriptions.forEach(([event, fn]) => remove.call(bus, event, fn));

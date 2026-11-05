@@ -1,5 +1,5 @@
 /** Read-only observation of ST's single chat endpoint. Never retries or rewrites a response. */
-import { analyzeOutput } from './structure.js?v=1.2.5';
+import { analyzeOutput, textDigest } from './structure.js?v=1.2.6';
 const textBuffers = new WeakMap();
 const textValue = value => typeof value === 'string' ? value : Array.isArray(value)
     ? value.filter(p => !p?.thought && p?.type !== 'thinking').map(p => typeof p?.text === 'string' ? p.text : '').join('') : '';
@@ -23,7 +23,12 @@ const chars = value => typeof value === 'string' ? value.length : Array.isArray(
 export function addResponseData(stats, data) {
     if (!data || typeof data !== 'object') return;
     if (Array.isArray(data)) { data.forEach(item => addResponseData(stats, item)); return; }
-    if (data.error) { stats.apiError = true; stats.recognized = true; }
+    if (data.error) {
+        stats.apiError = true; stats.recognized = true;
+        // Fixed categories only; never export arbitrary provider error messages.
+        const status = Number(data.error?.code ?? data.error?.status);
+        if (Number.isInteger(status) && status >= 400 && status <= 599) stats.apiStatus = status;
+    }
     if (data.promptFeedback?.blockReason) { stats.recognized = true; stats.blockReason = safeCode(data.promptFeedback.blockReason); }
     const candidate = data.candidates?.[0];
     if (candidate) {
@@ -72,11 +77,15 @@ export function addResponseData(stats, data) {
     const usage = data.usageMetadata || data.usage || data.message?.usage;
     const thought = usage?.thoughtsTokenCount ?? usage?.completion_tokens_details?.reasoning_tokens ?? usage?.output_tokens_details?.reasoning_tokens ?? usage?.total_thought_tokens;
     const output = usage?.candidatesTokenCount ?? usage?.completion_tokens ?? usage?.output_tokens ?? usage?.total_output_tokens;
+    const prompt = usage?.promptTokenCount ?? usage?.prompt_tokens ?? usage?.input_tokens;
+    const total = usage?.totalTokenCount ?? usage?.total_tokens;
     if (typeof thought === 'number') stats.thoughtTokens = thought;
     if (typeof output === 'number') stats.outputTokens = output;
+    if (typeof prompt === 'number') stats.promptTokens = prompt;
+    if (typeof total === 'number') stats.totalTokens = total;
 }
 
-export async function inspectResponse(response, { maxBytes = MAX_BYTES, timeoutMs = MAX_MS, expectedStream,
+export async function inspectResponse(response, { maxBytes = MAX_BYTES, timeoutMs = MAX_MS, expectedStream, signal,
     register = () => () => {} } = {}) {
     const started = Date.now();
     const rawType = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
@@ -85,7 +94,9 @@ export async function inspectResponse(response, { maxBytes = MAX_BYTES, timeoutM
     const stats = { httpStatus: response.status, contentType, expectedStream,
         visibleChars: 0, reasoningChars: 0, recognized: false, parseErrors: 0,
         receivedBytes: 0, networkReads: 0, maxGapMs: 0, transport: 'unknown', frames: 0, doneMarker: false, responseComplete: false };
-    if (!response.body) return stats;
+    const retry = Number(response.headers.get('retry-after'));
+    if (response.headers.has('retry-after') && Number.isFinite(retry) && retry >= 0 && retry <= 86400) stats.retryAfterSeconds = retry;
+    if (!response.body) { stats.responseComplete = true; stats.output = analyzeOutput(''); return stats; }
     const reader = response.body.getReader();
     let stopped = false;
     const cancel = () => { stopped = true; reader.cancel().catch(() => {}); };
@@ -161,7 +172,9 @@ export async function inspectResponse(response, { maxBytes = MAX_BYTES, timeoutM
     finally {
         clearTimeout(timer); unregister(); reader.releaseLock(); stats.durationMs = Date.now() - started;
         stats.output = analyzeOutput(textBuffers.get(stats) || '');
+        stats.textDigest = await textDigest(textBuffers.get(stats) || '');
         textBuffers.delete(stats);
+        if (signal?.aborted) stats.aborted = true;
     }
     if (expectedStream === true && ['json', 'ndjson'].includes(stats.transport)) stats.protocolMismatch = 'stream-request-non-sse';
     if (expectedStream === false && stats.transport === 'sse') stats.protocolMismatch = 'json-request-sse';
@@ -177,36 +190,79 @@ export function installObserver({ target = globalThis, enabled, onDispatch, onRe
     const readers = new Set();
     const tasks = new Set();
     if (typeof original !== 'function') return { available: false, dispose() {}, idle: async () => {} };
+    function track(task) {
+        tasks.add(task);
+        task.finally(() => tasks.delete(task)).catch(() => {});
+    }
+    async function requestBody(input) {
+        const reader = input.clone().body?.getReader();
+        if (!reader) return null;
+        let stopped = false, size = 0, text = '';
+        const decoder = new TextDecoder();
+        const cancel = () => { stopped = true; reader.cancel().catch(() => {}); };
+        readers.add(cancel);
+        // Limits affect observation only. Never delay/abort the actual fetch.
+        const timer = setTimeout(cancel, 5000);
+        try {
+            while (!stopped) {
+                const { done, value } = await reader.read();
+                if (done) return stopped ? null : text + decoder.decode();
+                size += value.byteLength;
+                if (size > MAX_BYTES) { cancel(); return null; }
+                text += decoder.decode(value, { stream: true });
+            }
+            return null;
+        } catch { return null; }
+        finally { clearTimeout(timer); readers.delete(cancel); reader.releaseLock(); }
+    }
     async function wrapped(input, init) {
         let id;
+        let dispatch;
         let expectedStream;
+        const signal = init?.signal || input?.signal;
+        function observeRequest(body) {
+            try {
+                const request = body === null ? null : JSON.parse(body);
+                if (request && active) {
+                    expectedStream = typeof request.stream === 'boolean' ? request.stream : undefined;
+                    id = onDispatch(request);
+                }
+            } catch { /* Unsupported request shapes pass through unchanged. */ }
+        }
         try {
             const base = target.location?.href || 'http://localhost/';
             const url = new URL(typeof input === 'string' || input instanceof URL ? String(input) : input.url, base);
             if (active && enabled() && url.origin === new URL(base).origin && url.pathname === ENDPOINT
-                && String(init?.method || input?.method || 'GET').toUpperCase() === 'POST'
-                && typeof init?.body === 'string') {
-                const request = JSON.parse(init.body);
-                expectedStream = typeof request.stream === 'boolean' ? request.stream : undefined;
-                id = onDispatch(request);
+                && String(init?.method || input?.method || 'GET').toUpperCase() === 'POST') {
+                // Request objects are used by some host branches. Clone only for
+                // read-only inspection; never consume or replace their body.
+                if (typeof init?.body === 'string') observeRequest(init.body);
+                else if (init?.body === undefined && typeof input?.clone === 'function')
+                    dispatch = requestBody(input).then(observeRequest);
             }
         } catch { /* Unsupported request shapes pass through unchanged. */ }
         let response;
+        const sent = Date.now();
         try { response = await original.call(this, input, init); }
         catch (error) {
-            if (id && active) { try { onError(id, { aborted: error?.name === 'AbortError', networkError: error?.name !== 'AbortError' }); } catch { /* isolated */ } }
+            const report = () => { if (id && active) { try { onError(id, { aborted: error?.name === 'AbortError', networkError: error?.name !== 'AbortError' }); } catch { /* isolated */ } } };
+            if (dispatch) track(dispatch.then(report)); else report();
             throw error;
         }
-        if (id && active) {
+        if ((id || dispatch) && active) {
             try {
-                const task = inspectResponse(response.clone(), {
-                    expectedStream,
-                    register(cancel) { readers.add(cancel); return () => readers.delete(cancel); },
-                }).then(stats => { if (active) onResponse(id, stats); }).catch(() => {
-                    if (active) onError(id, { captureLimited: true });
+                const copy = response.clone();
+                const task = Promise.resolve(dispatch).then(async () => {
+                    if (!id || !active) { copy.body?.cancel().catch(() => {}); return; }
+                    const stats = await inspectResponse(copy, {
+                        expectedStream, signal,
+                        register(cancel) { readers.add(cancel); return () => readers.delete(cancel); },
+                    });
+                    if (active) onResponse(id, { ...stats, totalDurationMs: Date.now() - sent });
+                }).catch(() => {
+                    if (id && active) onError(id, { captureLimited: true });
                 });
-                tasks.add(task);
-                task.finally(() => tasks.delete(task)).catch(() => {});
+                track(task);
             } catch { try { onError(id, { captureLimited: true }); } catch { /* isolated */ } }
         }
         return response;

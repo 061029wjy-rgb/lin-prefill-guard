@@ -1,6 +1,6 @@
-import { DEFAULT_PREFILL, DEFAULT_NUDGE, SETTINGS_KEY, VERSION, REASONS, normalizeSettings, migrateSettings } from './core.js?v=1.2.5';
-import { createController } from './controller.js?v=1.2.5';
-import { formatRecord, recordStatus } from './diagnostics.js?v=1.2.5';
+import { DEFAULT_PREFILL, DEFAULT_NUDGE, SETTINGS_KEY, VERSION, REASONS, normalizeSettings, migrateSettings } from './core.js?v=1.2.6';
+import { createController } from './controller.js?v=1.2.6';
+import { formatRecord, recordStatus } from './diagnostics.js?v=1.2.6';
 
 const INSTANCE_KEY = Symbol.for('lin-prefill-guard.instance');
 let controller;
@@ -68,10 +68,12 @@ function renderHistory() {
     const list = panel?.querySelector('.lpg-records');
     if (!list) return;
     const query = panel.querySelector('.lpg-search').value.trim().toLowerCase();
-    const records = (lastView?.history || []).filter(r => !query || formatRecord(r).toLowerCase().includes(query));
+    const includeUnassociated = panel.querySelector('.lpg-unassociated')?.checked === true;
+    const records = (lastView?.history || []).filter(r => (includeUnassociated || (r.origin !== 'unassociated' && r.reason !== 'unmatched-dispatch'))
+        && (!query || formatRecord(r).toLowerCase().includes(query)));
     list.replaceChildren();
     for (const r of records) {
-        const label = `${new Date(r.at).toLocaleString()} · ${r.request?.model || r.type} · ${recordStatus(r).label} · ${r.id.slice(-8)}`;
+        const label = `${r.origin === 'unassociated' || r.reason === 'unmatched-dispatch' ? '[未关联] ' : ''}${new Date(r.at).toLocaleString()} · ${r.request?.model || r.type} · ${recordStatus(r).label} · ${r.id.slice(-8)}`;
         list.append(element('option', { value: r.id }, label));
     }
     if (!records.some(r => r.id === selectedRecord)) selectedRecord = records[0]?.id || '';
@@ -95,6 +97,11 @@ function historyPanel() {
     const details = element('details', { className: 'lpg-advanced lpg-history' });
     details.append(element('summary', {}, '注入历史 · 查询 / 复制 / 导出'));
     details.append(hint('从本版启用后开始，最近 50 条随酒馆账户设置保存，刷新后可查询；不能恢复旧版记录。只记录插件提示、请求参数及响应统计，不记录完整聊天、密钥或思考原文。'));
+    const unassociated = element('label', { className: 'lpg-check' });
+    const showUnassociated = element('input', { type: 'checkbox', className: 'lpg-unassociated' });
+    showUnassociated.addEventListener('change', renderHistory);
+    unassociated.append(showUnassociated, element('span', {}, '显示未关联请求（可能来自后台任务）'));
+    details.append(unassociated);
     const search = element('input', { type: 'search', className: 'text_pole lpg-search', placeholder: '搜索时间、模型、注入文字或诊断' });
     search.setAttribute('aria-label', '搜索注入历史');
     search.addEventListener('input', renderHistory);
@@ -171,7 +178,7 @@ function mount() {
     body.append(hint('上传的 Lin2.5 / 2.6 均为 auto，可保持“沿用当前参数”。可选降档只用于已识别的 Gemini 文本型号：3.0 Pro 用 low，其他支持型号用 medium；图像与未知型号不猜测。渠道仍可能忽略参数。'));
     body.append(checkbox('启用发送与接口取证（可查看实际发送提示）', 'captureNetwork'));
     body.append(checkbox('Lin2.6系列交付保护：识别三种CoT＋组件完整性', 'deliveryGuard'));
-    body.append(hint('支持标准、中等、超长CoT，篇幅沿用所选条目，不再统一压到500字。重抽／重生成明确重新回答；user / pair模式及自定义文本保留。句尾检查仅提供疑似提示，STOP不代表正文写完，不自动重试。'));
+    body.append(hint('沿用所选CoT栏目与篇幅，不设500字上限。识别空文本、仅注释、异常短回复及带HTML的正文句尾。检查是提示，STOP不代表正文写完。'));
     body.append(checkbox('对“继续补全”也加提示（默认关闭）', 'enhanceContinue'));
     body.append(hint('渠道排查：在酒馆原生连接设置中关闭流式，再手动重试一次。必须在生成前切换；仅修改请求中的 stream 字段会使酒馆解析方式与响应不一致。取证现在可识别无标头 SSE、JSON 及协议错配。'));
     body.append(hint('原生继续预填充、后台摘要、用户代写、工具调用和 JSON 结构化请求会自动跳过。'));
@@ -207,6 +214,33 @@ function mount() {
     const inspect = element('button', { type: 'button', className: 'menu_button lpg-button' }, '检查当前回复（不调用模型）');
     inspect.addEventListener('click', () => { auditResult.textContent = controller.inspectCurrent(); });
     body.append(inspect);
+    const recoveryBox = element('details', { className: 'lpg-advanced lpg-recovery' });
+    recoveryBox.append(element('summary', {}, '手动补全 / 重生成'));
+    recoveryBox.append(hint('先检查当前最后一条回复。补全会接写它，重生成会由酒馆替换它；都会调用当前连接并可能产生费用。每次点击仅发起一次酒馆生成操作，插件不自动循环重试。'));
+    const recoveryFeedback = element('p', { className: 'lpg-hint lpg-audit', role: 'status' });
+    const prepare = element('button', { type: 'button', className: 'menu_button lpg-button' }, '检查操作目标（免费）');
+    const continueButton = element('button', { type: 'button', className: 'menu_button lpg-button', disabled: true }, '补全当前回复');
+    const retryButton = element('button', { type: 'button', className: 'menu_button lpg-button', disabled: true }, '重生成并替换当前回复');
+    let plan;
+    prepare.addEventListener('click', () => {
+        plan = controller.prepareRecovery();
+        recoveryFeedback.textContent = plan.message;
+        continueButton.disabled = !plan.ok || !plan.canContinue;
+        retryButton.disabled = !plan.ok;
+    });
+    async function recover(action) {
+        continueButton.disabled = true; retryButton.disabled = true; prepare.disabled = true;
+        recoveryFeedback.textContent = '正在交给酒馆处理；可使用酒馆停止按钮中止。';
+        try { const result = await controller.runRecovery(plan, action); recoveryFeedback.textContent = result.message; }
+        catch { recoveryFeedback.textContent = '未完成，请查看酒馆错误提示；插件未自动再次调用。'; }
+        finally { plan = undefined; prepare.disabled = false; }
+    }
+    continueButton.addEventListener('click', () => recover('continue'));
+    retryButton.addEventListener('click', () => recover('regenerate'));
+    const recoveryActions = element('div', { className: 'lpg-actions' });
+    recoveryActions.append(prepare, continueButton, retryButton);
+    recoveryBox.append(recoveryActions, recoveryFeedback);
+    body.append(recoveryBox);
     const preview = element('details', { className: 'lpg-advanced' });
     preview.append(element('summary', {}, '查看最近实际注入的文本'), element('pre', { className: 'lpg-preview' }));
     body.append(preview);
@@ -240,7 +274,8 @@ export function onEnable() {
     globalThis[INSTANCE_KEY] = { dispose: onDisable };
     lastView = undefined;
     selectedRecord = '';
-    controller = createController({ getContext: context, getSettings: settings, onStatus: updateStatus });
+    controller = createController({ getContext: context, getSettings: settings, onStatus: updateStatus,
+        hasDraft: () => !!document.querySelector('#send_textarea')?.value?.trim() });
     mount();
     const ctx = context();
     const ready = (ctx.eventTypes || ctx.event_types)?.APP_READY;

@@ -49,6 +49,7 @@
   line-height: 1.7;
 }
 #lin-prefill-guard-panel .lpg-button { width: auto; min-height: 40px; padding: 7px 12px; cursor: pointer; font: inherit; font-size: 0.9em; }
+#lin-prefill-guard-panel .lpg-button:disabled { opacity: 0.45; cursor: not-allowed; }
 #lin-prefill-guard-panel .lpg-preview { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; font-size: 0.85em; line-height: 1.65; padding: 8px; }
 #lin-prefill-guard-panel .lpg-search,
 #lin-prefill-guard-panel .lpg-records { width: 100%; box-sizing: border-box; min-width: 0; font: inherit; font-size: 0.85em; }

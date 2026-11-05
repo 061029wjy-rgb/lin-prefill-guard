@@ -37,10 +37,17 @@ export function analyzeOutput(value = '') {
         }
         return inCode ? '' : line;
     }).join('\n');
-    const open = new Map();
-    for (const m of markup.matchAll(/<(\/?)(content|Lin_header|Lin_schedule|Lin_options|choice[1-4]|details)\b[^>]*>/gi)) {
+    const open = new Map(), stack = [];
+    let misnestedTags = 0, orphanClosings = 0;
+    for (const m of markup.matchAll(/<(\/?)(content|Lin_header|Lin_schedule|Lin_options|Lin_theater|choice[1-4]|details)\b[^>]*>/gi)) {
         const name = m[2].toLowerCase();
         open.set(name, Math.max(0, (open.get(name) || 0) + (m[1] ? -1 : 1)));
+        if (!m[1]) stack.push(name);
+        else {
+            const index = stack.lastIndexOf(name);
+            if (index < 0) orphanClosings++;
+            else { if (index !== stack.length - 1) misnestedTags++; stack.splice(index, 1); }
+        }
     }
     let embeddedThinkingChars = 0, openThinking = false;
     const withoutThoughts = markup.replace(/<(think|thinking)\b[^>]*>[\s\S]*?(?:<\/\1\s*>|$)/gi, block => {
@@ -57,30 +64,63 @@ export function analyzeOutput(value = '') {
         const choices = [...block[1].matchAll(/<choice([1-4])\b[^>]*>([\s\S]*?)<\/choice\1\s*>/gi)];
         return choices.map(c => c[1]).join('') !== '1234' || choices.some(c => !c[2].trim());
     }).length;
+    const hasMedia = /<(?:img|svg|video|audio|iframe|canvas)\b/i.test(withoutThoughts);
     const onlyNotes = !!text.trim() && (commentChars > 0 || embeddedThinkingChars > 0)
-        && !withoutThoughts.replace(/<[^>]*>/g, '').trim() && !/```|~~~/.test(withoutComments);
+        && !plainMarkup(withoutThoughts) && !hasMedia && !/```|~~~/.test(withoutComments);
+    const noTextContent = text.length > 0 && !plainMarkup(withoutThoughts)
+        && !hasMedia && !/```|~~~/.test(withoutComments);
     const ending = analyzeEnding(withoutThoughts, withoutComments);
     return { rawChars: text.length, commentChars, cotChars, cotCount, closedCotCount,
         nonCommentChars, nonThoughtChars, embeddedThinkingChars, onlyNotes,
-        openComment: commentStart >= 0, openThinking, openFence: !!inCode,
+        openComment: commentStart >= 0, openThinking, openFence: !!inCode, noTextContent,
+        misnestedTags, orphanClosings,
         optionBlocks: optionBlocks.length, incompleteOptions, ending,
         openTags: [...open].filter(([, count]) => count > 0).map(([name]) => name).slice(0, 16) };
+}
+
+function plainMarkup(value) {
+    return value.replace(/<(script|style)\b[^>]*>[\s\S]*?(?:<\/\1\s*>|$)/gi, '')
+        .replace(/<(?:br|\/p|\/div|\/section|\/article)\b[^>]*>/gi, '\n')
+        .replace(/<[^>]*>/g, '').replace(/&nbsp;|&#160;|&#xA0;/gi, ' ')
+        .replace(/&quot;/gi, '"').replace(/&apos;/gi, "'").replace(/&amp;/gi, '&').trim();
+}
+
+/** Digest the exact received/saved text; never persist the text itself. Optional in older clients. */
+export async function textDigest(text) {
+    try {
+        if (!globalThis.crypto?.subtle) return null;
+        const bytes = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+        return [...new Uint8Array(bytes)].map(x => x.toString(16).padStart(2, '0')).join('');
+    } catch { return null; }
 }
 
 /** Weak punctuation evidence, never semantic completeness. No reply text is retained. */
 function analyzeEnding(markup, source) {
     const contents = [...markup.matchAll(/<content\b[^>]*>([\s\S]*?)(?:<\/content\s*>|$)/gi)];
     const scope = contents.length ? 'content' : 'plain';
-    const unchecked = { checked: false, scope, signals: [] };
-    // A final code block, HTML component or Markdown table/list is not prose.
-    if (!contents.length && (/>\s*$/.test(markup) || /(?:^|\n)\s*(?:`{3,}|~{3,})\s*$/.test(source))) return unchecked;
-    const body = (contents.length ? contents.at(-1)[1] : markup).trim();
-    if (!body || /<[^>]*$/.test(body)) return unchecked;
+    const unchecked = reason => ({ checked: false, scope, signals: [], reason });
+    if (!contents.length && /(?:^|\n)\s*(?:`{3,}|~{3,})\s*$/.test(source)) return unchecked('code-ending');
+    // Remove known ancillary components, including nested details, before checking
+    // prose. Generic div/p/span wrappers are not a reason to skip the entire story.
+    let candidate = contents.length ? contents.at(-1)[1] : markup;
+    candidate = candidate.replace(/<(script|style)\b[^>]*>[\s\S]*?(?:<\/\1\s*>|$)/gi, '');
+    if (!contents.length) {
+        candidate = candidate.replace(/<(Lin_header|Lin_schedule|Lin_options|Lin_theater)\b[^>]*>[\s\S]*?(?:<\/\1\s*>|$)/gi, '');
+        let depth = 0, output = '', cursor = 0;
+        for (const m of candidate.matchAll(/<(\/?)details\b[^>]*>/gi)) {
+            if (!m[1]) { if (depth++ === 0) output += candidate.slice(cursor, m.index); }
+            else if (depth > 0 && --depth === 0) cursor = m.index + m[0].length;
+        }
+        candidate = output + (depth ? '' : candidate.slice(cursor));
+    }
+    const body = candidate.trim();
+    if (!body || /<[^>]*$/.test(body)) return unchecked('no-prose-or-partial-tag');
+    if (!contents.length && /<(?:table|ul|ol|pre|svg|iframe|script|style)\b/i.test(body)) return unchecked('structured-format');
     const lastLine = body.split(/\r?\n/).at(-1).trim();
-    if (/^(?:#{1,6}\s|[-*+]\s|\d+[.)、]\s?|\||>)/.test(lastLine)) return unchecked;
-    const plain = body.replace(/<[^>]*>/g, '').trim();
+    if (/^(?:#{1,6}\s|[-*+]\s|\d+[.)、]\s?|\||>)/.test(lastLine)) return unchecked('markdown-format');
+    const plain = plainMarkup(body);
     // Avoid treating short answers, single words and non-Chinese formats as cuts.
-    if (plain.length < 80 || !/[\u3400-\u9fff]/.test(plain) || !/[。！？.!?]/.test(plain)) return unchecked;
+    if (plain.length < 80 || !/[\u3400-\u9fff]/.test(plain) || !/[。！？.!?]/.test(plain)) return unchecked('short-or-non-prose');
     const tail = plain.replace(/[\s”’"'」』）)】\]*_]+$/g, '');
     const signals = [];
     if (/[，,、：:；;—-]$/.test(tail)) signals.push('trailing-separator');
@@ -100,7 +140,10 @@ export function structureDiagnosis(output) {
     if (output.openComment) lines.push('HTML注释未闭合，后续文本可能被隐藏；不能把注释算作正文');
     if (output.openThinking) lines.push('文本中的思考标签未闭合');
     if (output.onlyNotes) lines.push('只检测到思考/注释，尚无注释外正文');
+    else if (output.noTextContent) lines.push('只检测到空白或空标签，未检测到正文文字');
     if (output.openTags?.length) lines.push(`结构未闭合：${output.openTags.join('、')}，疑似输出未完成`);
+    if (output.misnestedTags) lines.push('组件标签闭合顺序错误，可能影响显示');
+    if (output.orphanClosings) lines.push('存在没有对应开头的组件闭合标签，需核对原文');
     if (output.incompleteOptions) lines.push('四选项结构不完整：存在缺项、空项、重复或顺序不符；闭合外层标签不等于组件完整');
     if (output.openFence) lines.push('代码围栏未闭合，可能影响显示');
     if (output.cotCount > 1) lines.push('检测到多段Lin_CoT，可能重复生成前置摘要');
