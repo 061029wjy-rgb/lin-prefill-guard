@@ -1,5 +1,5 @@
-import { hasServiceRestriction } from './diagnostics.js?v=1.2.6';
-import { analyzeOutput } from './structure.js?v=1.2.6';
+import { hasServiceRestriction } from './diagnostics.js?v=1.2.7';
+import { analyzeOutput } from './structure.js?v=1.2.7';
 
 /** Explicit user-click actions only. No timers, retries, direct API calls or chat edits. */
 export function createRecovery({ getContext, getRecord = () => null, isBusy = () => false, hasDraft = () => false }) {

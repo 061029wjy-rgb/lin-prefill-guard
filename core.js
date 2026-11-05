@@ -1,6 +1,6 @@
 /** Pure request planning. This module never sends requests or changes chat history. */
-import { deliveryProfile, deliveryCue } from './delivery.js?v=1.2.6';
-export const VERSION = '1.2.6';
+import { deliveryProfile, deliveryCue } from './delivery.js?v=1.2.7';
+export const VERSION = '1.2.7';
 export const SETTINGS_KEY = 'lin_prefill_guard_v1';
 export const LIN_PROMPT_ID = 'e898d676-f02e-4868-bc51-33761e294df6';
 export const DEFAULT_PREFILL = '已定位本轮任务：以聊天记录中真实用户的最新请求为准。续写承接最后有效正文，修订处理指定范围，戏外问题直接回答。沿用已启用的视角、角色控制和输出格式；下一条回复交付所需结果，不重演已完成的情节，不以接收确认或写作计划代替结果。';
@@ -11,6 +11,7 @@ export const CONTINUE_NUDGE = '本次仅补齐上一条回复的可见断点，�
 export const CONTINUE_PREFILL = '本次任务是补全当前回复，已有文本保持有效，只交付可见断点之后缺失的部分。若仅有未完注释，先补齐并闭合，再交付正文；已完成的正文与组件不重复。沿用当前视角、角色权限及格式，不另开新场景或新一轮前置摘要。';
 export const DEFAULTS = Object.freeze({
     enabled: true,
+    requestMode: 'observe',
     scope: 'lin',
     mode: 'user',
     enhanceContinue: false,
@@ -22,6 +23,7 @@ export const DEFAULTS = Object.freeze({
 });
 
 export const REASONS = Object.freeze({
+    'observe-only': '原样诊断模式：保留预设组装的请求，不注入承接或交付提示，不调整参数。',
     applied: '已整理本次请求，末尾为 assistant → user。',
     'applied-user': '已整理本次请求，末尾为 user 承接提示。',
     'already-present': '本次请求已有完整承接提示，未重复添加。',
@@ -51,6 +53,7 @@ export function normalizeSettings(value = {}) {
     const input = value && typeof value === 'object' ? value : {};
     return {
         enabled: typeof input.enabled === 'boolean' ? input.enabled : DEFAULTS.enabled,
+        requestMode: input.requestMode === 'enhance' ? 'enhance' : 'observe',
         scope: input.scope === 'all' ? 'all' : 'lin',
         mode: input.mode === 'pair' ? 'pair' : 'user',
         enhanceContinue: input.enhanceContinue === true,
@@ -62,7 +65,7 @@ export function normalizeSettings(value = {}) {
     };
 }
 
-/** Keep existing choices/custom text; upgrade only the exact shipped 1.0.0 nudge. */
+/** Preserve saved text/choices; old installs enter observe mode until explicitly changed. */
 export function migrateSettings(value = {}) {
     const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
     const next = { ...DEFAULTS, ...input };
@@ -138,8 +141,14 @@ export function planInjection(request, rawSettings = {}, { preset = {}, ownedMes
         || request.messages.some(m => !m || typeof m !== 'object' || typeof m.role !== 'string')) return skip('bad-payload');
     if (type === 'quiet') return skip('quiet');
     if (type === 'impersonate') return skip('impersonate');
-    if (type === 'continue' && !settings.enhanceContinue) return skip('continue-disabled');
     if (!['normal', 'regenerate', 'swipe', 'continue'].includes(type)) return skip('unsupported-type');
+    if (settings.requestMode === 'observe') {
+        return { ...skip('observe-only'), identification: getLinState(preset).known ? 'preset' : 'none',
+            profile: deliveryProfile(preset, type), messages: request.messages, injected: [],
+            deliveryGuard: false, removedOriginal: false, netChars: 0,
+            tailRoles: request.messages.slice(-2).map(m => m.role) };
+    }
+    if (type === 'continue' && !settings.enhanceContinue) return skip('continue-disabled');
     if ([request.assistant_prefill, preset.assistant_prefill].some(v => typeof v === 'string' && v.trim())) return skip('native-prefill');
     if (type === 'continue' && (preset.continue_prefill === true || request.messages.at(-1)?.role === 'assistant')) {
         return skip('native-prefill');

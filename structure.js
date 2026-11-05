@@ -73,6 +73,7 @@ export function analyzeOutput(value = '') {
     return { rawChars: text.length, commentChars, cotChars, cotCount, closedCotCount,
         nonCommentChars, nonThoughtChars, embeddedThinkingChars, onlyNotes,
         openComment: commentStart >= 0, openThinking, openFence: !!inCode, noTextContent,
+        replySignals: analyzeReplySignals(withoutThoughts),
         misnestedTags, orphanClosings,
         optionBlocks: optionBlocks.length, incompleteOptions, ending,
         openTags: [...open].filter(([, count]) => count > 0).map(([name]) => name).slice(0, 16) };
@@ -83,6 +84,28 @@ function plainMarkup(value) {
         .replace(/<(?:br|\/p|\/div|\/section|\/article)\b[^>]*>/gi, '\n')
         .replace(/<[^>]*>/g, '').replace(/&nbsp;|&#160;|&#xA0;/gi, ' ')
         .replace(/&quot;/gi, '"').replace(/&apos;/gi, "'").replace(/&amp;/gi, '&').trim();
+}
+
+/** Weak language evidence only. Never used to filter text or prevent a request. */
+function analyzeReplySignals(markup) {
+    const plain = plainMarkup(markup);
+    if (!plain || plain.length > 800 || /^[>"'“‘「『]/.test(plain)
+        || /<(?:content|Lin_\w+|pre|code)\b/i.test(markup)) return [];
+    const signals = [];
+    const refusalZh = /^(?:(?:很|非常)?抱歉|对不起)?[，,。！!\s]*(?:但(?:是)?[，,\s]*)?(?:我|我们)(?:不能|无法|不可以|不便)(?:帮助|提供|协助|满足|执行|继续|生成|创作|描写|回答|处理|完成)/;
+    const refusalEn = /^(?:(?:I'm|I am) sorry[,.\s]*|Sorry[,.\s]*|I apologize[,.\s]*)?(?:but\s+)?I (?:can't|cannot|am unable to|won't) (?:help|assist|provide|comply|fulfill|continue|generate|write|create|answer)\b/i;
+    if (refusalZh.test(plain) || refusalEn.test(plain)) signals.push('refusal-text');
+    const error = /^(?:error|api error|upstream error|request failed|generation failed|service unavailable|too many requests|rate limit exceeded|invalid api key)\b/i.test(plain)
+        || /^(?:请求失败|接口错误|上游错误|生成失败|连接失败|服务暂时不可用|请求过于频繁)(?:[：:，,\s]|$)/.test(plain);
+    if (error) signals.push('error-text');
+    return signals;
+}
+
+export function replySignalDiagnosis(output) {
+    const signals = output?.replySignals || [];
+    if (signals.includes('error-text')) return '文本含疑似接口错误提示；可能被渠道放入正文content。仅依据措辞，不等于已取得错误码，也不应当作故事接写。';
+    if (signals.includes('refusal-text')) return '注释外文本含直接拒答措辞（弱提示）；这与空正文不同，不等于接口提供了拒绝字段。不能凭此确定是哪条内容触发，需核对原文及上下文。';
+    return '';
 }
 
 /** Digest the exact received/saved text; never persist the text itself. Optional in older clients. */

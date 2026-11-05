@@ -1,6 +1,6 @@
-import { getLinState, normalizeSettings, plainText, VERSION } from './core.js?v=1.2.6';
-import { deliveryProfile } from './delivery.js?v=1.2.6';
-import { structureDiagnosis, endingDiagnosis } from './structure.js?v=1.2.6';
+import { getLinState, normalizeSettings, plainText, VERSION } from './core.js?v=1.2.7';
+import { deliveryProfile } from './delivery.js?v=1.2.7';
+import { structureDiagnosis, endingDiagnosis, replySignalDiagnosis } from './structure.js?v=1.2.7';
 
 export const HISTORY_KEY = 'lin_prefill_guard_history_v2';
 export const HISTORY_LIMIT = 50;
@@ -101,7 +101,7 @@ export function captureInjection(messages, injected = []) {
     return result;
 }
 
-export function auditPreset(preset = {}, request = {}) {
+export function auditPreset(preset = {}, request = {}, settings = {}) {
     const notes = [];
     const effort = request.reasoning_effort || preset.reasoning_effort;
     const limit = request.max_tokens ?? preset.openai_max_tokens;
@@ -111,6 +111,11 @@ export function auditPreset(preset = {}, request = {}) {
     const size = active.reduce((n, p) => n + (p.content?.length || 0), 0);
     if (size > 20000) notes.push(`输入侧固定提示约 ${size} 字符（不含世界书与聊天），这是发送给模型的提示词长度，不是模型输出或正文长度。`);
     if (active.some(p => /绝对不可以直接输出正文|必须进行最大程度的思考/.test(p.content || ''))) notes.push('尾部含强制最大思考要求；可与高思考参数叠加，且文字提示不能保证给正文预留 token。');
+    if (active.some(p => /【Lin_CoT模式与交付】/.test(p.content || '') && /【断点续传】/.test(p.content || ''))) {
+        notes.push(normalizeSettings(settings).requestMode === 'enhance'
+            ? '预设已含CoT交付与断点续传规则；当前增强模式仍会替换原承接条目并追加提示，存在重复干预。可切换原样诊断保留预设原顺序与原文。'
+            : '预设已含CoT交付与断点续传规则；原样诊断模式保留这些规则及原承接条目，不再叠加插件提示。');
+    }
     if (preset.enable_web_search === true) notes.push('预设开启网页搜索；无联网需要时可关闭，减少工具及渠道兼容变量。');
     if (Number(preset.openai_max_context) > 1048576) notes.push('本地上下文设置超过 1M；实际可用窗口取决于接口及真实模型，不能从渠道别名推断。本地设置不会扩大服务商窗口。');
     if (request.chat_completion_source === 'custom') notes.push('当前为自定义接口；模型别名不能证明后端型号或参数支持范围。请以渠道实际响应为准。');
@@ -130,7 +135,8 @@ export function auditPreset(preset = {}, request = {}) {
 
 /** Opt-in, request-only adjustment, limited to known Gemini families. */
 export function planReasoning(request, settings) {
-    if (normalizeSettings(settings).reasoningMode !== 'balanced') return null;
+    const state = normalizeSettings(settings);
+    if (state.requestMode !== 'enhance' || state.reasoningMode !== 'balanced') return null;
     if (!['max', 'high', 'xhigh'].includes(request.reasoning_effort)) return null;
     const model = String(request.model || '').toLowerCase();
     let value;
@@ -145,6 +151,28 @@ export function planReasoning(request, settings) {
 
 export function hasServiceRestriction(stats = {}) {
     return !!stats?.blockReason || /SAFETY|PROHIBITED|BLOCKLIST|RECITATION|CONTENT_FILTER|SPII|MODEL_ARMOR/i.test(stats?.finishReason || '');
+}
+
+/** This transport shape is not proof of a refusal or a server error. */
+export function compactStreamEvidence(stats = {}) {
+    return stats.transport === 'sse' && stats.responseComplete === true && stats.doneMarker === true
+        && stats.frames >= 1 && stats.frames <= 3 && stats.visibleChars > 0 && stats.visibleChars <= 320
+        && !stats.finishReason && !stats.blockReason && !stats.refusal && !stats.apiError
+        && !stats.captureLimited && !stats.parseErrors && !stats.aborted && !stats.networkError
+        && !(stats.httpStatus >= 400) && !stats.toolCalls
+        && stats.outputTokens == null && stats.thoughtTokens == null
+        ? '短流缺少结束原因：仅有少量文本帧和DONE，未提供生成用量。可能是渠道将错误提示放进content，也可能是简短回复；不能按正文标点认定截断，需核对原文。'
+        : '';
+}
+
+/** Compare digests only; repeated text does not reveal why it was sent. */
+export function repeatedReplyEvidence(record = {}, records = []) {
+    const w = record.wire || {};
+    if (!compactStreamEvidence(w) || !w.textDigest || record.reason === 'unmatched-dispatch') return '';
+    const count = new Set(records.filter(r => r.reason !== 'unmatched-dispatch'
+        && r.request?.model === record.request?.model && compactStreamEvidence(r.wire)
+        && r.wire?.textDigest === w.textDigest).map(r => r.id)).size;
+    return count > 1 ? `同一模型的相同短文本在最近记录中出现 ${count} 次（SHA-256一致）；可能是固定提示，摘要值不能还原内容或证明拒答。` : '';
 }
 
 /** Missing CoT plus a very short response is evidence to inspect, not proof of failure. */
@@ -165,12 +193,15 @@ export function responseDiagnosis(stats = {}) {
     if (stats.incomplete && !/MAX_TOKENS|LENGTH/i.test(stats.finishReason || '')) return '接口标记响应未完成，具体原因未提供；不能直接认定输出预算耗尽。';
     if (stats.refusal) return '接口返回了明确拒绝字段；这是拒答而非空回，插件不针对该限制自动补全或重试。';
     const structural = structureDiagnosis(stats.output);
+    const reply = replySignalDiagnosis(stats.output);
     if (stats.output?.onlyNotes) return `接口文本字段 ${stats.visibleChars || 0} 字符，其中Lin_CoT ${stats.output.cotChars} 字符；${structural}。${/^(?:STOP|END_TURN)$/i.test(stats.finishReason || '') ? '渠道报告STOP/正常结束，但这不等于正文已交付。' : /MAX_TOKENS|LENGTH/i.test(stats.finishReason || '') ? '渠道同时报告输出上限；思考/注释阶段可能已耗尽预算。' : '还需结合结束原因判断提前停写或传输中断。'}`;
-    if (structural) return `接口文本字段 ${stats.visibleChars || 0} 字符；${structural}。${stats.finishReason ? `结束原因：${stats.finishReason}。` : '渠道未提供结束原因。'}`;
+    if (structural) return `接口文本字段 ${stats.visibleChars || 0} 字符${stats.output?.commentChars ? `（注释 ${stats.output.commentChars}；注释外 ${stats.output.nonCommentChars}）` : ''}；${structural}。${stats.finishReason ? `结束原因：${stats.finishReason}。` : '渠道未提供结束原因。'}${reply}`;
     if (stats.missingTerminal) return `流式读取已结束，但缺少结束原因和结束标志；已识别文本 ${stats.visibleChars || 0} 字符，可能中途断流，不能确认完整交付。${stats.streamMessageEnvelope ? 'SSE使用message而非delta字段，需检查渠道适配。' : ''}${stats.parseErrors ? '存在解析错误，取证不完整。' : ''}`;
     if (stats.captureLimited && stats.visibleChars > 0) return `已识别部分文本 ${stats.visibleChars} 字符，但取证不完整（${stats.limitReason === 'read-error' ? '读取中断' : '受限或被停止'}），不能确认回复完整。`;
     if (stats.protocolMismatch) return `请求与响应协议不一致：${stats.protocolMismatch === 'stream-request-non-sse' ? '请求流式，却收到 JSON / NDJSON；可先在酒馆原生设置关闭流式再重试' : '请求 JSON，却收到 SSE；检查渠道协议'}。已识别正文 ${stats.visibleChars || 0} 字符，不能据此认定模型空回。`;
     if (stats.streamMessageEnvelope) return `SSE 帧使用 message 而非 delta 字段；检测到正文 ${stats.visibleChars || 0} 字符，需检查渠道流式格式，或在酒馆关闭流式后排查。`;
+    if (reply || compactStreamEvidence(stats)) return [reply, compactStreamEvidence(stats),
+        stats.finishReason ? `接口结束原因：${stats.finishReason}；不能由该文字提示推断具体限制类别。` : '渠道未提供结束原因。'].filter(Boolean).join('');
     if (stats.responseComplete && stats.recognized && !stats.parseErrors && stats.visibleChars > 0 && !stats.finishReason) return `收到 ${stats.visibleChars} 字符原始文本，但渠道未提供结束原因；${stats.doneMarker ? 'DONE只说明流已结束' : '读取结束'}，不能确认正文完整，也不能单凭短回复判断拒绝。`;
     if (stats.visibleChars > 0) return `接口文本字段 ${stats.visibleChars} 字符${stats.output?.commentChars ? `（注释 ${stats.output.commentChars}；注释外 ${stats.output.nonCommentChars}）` : ''}${/MAX_TOKENS|LENGTH/i.test(stats.finishReason || '') ? '，但达到输出上限，可能截断' : ''}${stats.captureLimited || stats.parseErrors ? '；取证不完整，该数值仅包含已识别部分' : ''}；文本长度不等于故事正文已完整交付。${/^(?:STOP|END_TURN|STOP_SEQUENCE)$/i.test(stats.finishReason || '') ? '接口报告结束；STOP可能是自行停写或停止序列，不能证明正文写完，也不能排除中转映射。' : ''}${endingDiagnosis(stats.output)}`;
     if (stats.captureLimited) return `取证未完成（${stats.limitReason === 'read-error' ? '读取中断' : '容量、时间限制或观察被停止'}）；尚不能据此判断空回。`;
@@ -199,6 +230,9 @@ export function recordStatus(record = {}) {
     if (w.missingTerminal || w.captureLimited || w.parseErrors) return { label: '取证不完整', state: 'warn' };
     if (output?.onlyNotes || output?.noTextContent) return { label: '尚无正文', state: 'warn' };
     if (structureDiagnosis(output)) return { label: '结构未完成', state: 'warn' };
+    if (output?.replySignals?.includes('error-text')) return { label: '疑似接口提示', state: 'warn' };
+    if (output?.replySignals?.includes('refusal-text')) return { label: '疑似文字拒答', state: 'warn' };
+    if (compactStreamEvidence(w)) return { label: '短流·原因未知', state: 'warn' };
     if (endingDiagnosis(output)) return { label: '疑似句尾未完', state: 'warn' };
     if (w.toolCalls) return { label: '工具调用', state: 'idle' };
     if ((record.rendered?.chars === 0 && record.rendered?.reasoningChars > 0)
@@ -226,10 +260,11 @@ export function recordDiagnosis(record = {}) {
     if (record.origin === 'unassociated' || record.reason === 'unmatched-dispatch') lines.push('未关联请求：可能是后台任务或其他扩展调用，不用于判定当前聊天回复是否完成。');
     if (record.wire) lines.push(responseDiagnosis(record.wire));
     if (profileMismatch(record)) lines.push(profileMismatch(record));
-    if (shortReplyEvidence(record)) lines.push(shortReplyEvidence(record));
+    if (shortReplyEvidence(record) && !compactStreamEvidence(record.wire)) lines.push(shortReplyEvidence(record));
     if (record.rendered) lines.push(record.rendered.chars > 0
         ? `酒馆已保存 ${record.rendered.chars} 字符原始文本${record.rendered.output ? `；Lin_CoT注释 ${record.rendered.output.cotChars} 字符；注释外文本 ${record.rendered.output.nonCommentChars} 字符` : '（旧记录未区分注释）'}。${structureDiagnosis(record.rendered.output) || endingDiagnosis(record.rendered.output) || '显示效果仍取决于正则与样式，不能仅由字符数确认正文完整。'}`
         : `酒馆保存的正文为空${record.rendered.reasoningChars ? '，有思考内容' : ''}。`);
+    if (record.rendered && replySignalDiagnosis(record.rendered.output)) lines.push(replySignalDiagnosis(record.rendered.output));
     if (!record.wire && record.lifecycle) lines.push(record.lifecycle);
     const comparison = compareDelivery(record);
     if (comparison) lines.push(comparison);
@@ -250,11 +285,13 @@ export function compareDelivery(record = {}) {
     return `接收核对：接口 ${w.visibleChars} 字符，保存原文 ${saved} 字符，长度不一致。可能涉及保存处理、正则转换或事件关联，需要核对；不能直接归因于模型截断。`;
 }
 
-export function formatRecord(record) {
+export function formatRecord(record, records = []) {
     if (!record) return '尚无记录。正常发送一条消息后可在这里查询。';
     const lines = [`记录 ${record.id} · v${record.version || VERSION}`, `时间：${record.at}`, `类型：${record.type} · 模型：${record.request?.model || '未提供'}`, `组装：${record.explanation}`, `发送：${record.dispatch?.label || '未观察到浏览器发送，或未开启网络取证'}`];
+    if (record.requestMode) lines.push(`请求处理：${record.requestMode === 'observe' ? '原样诊断（不改写提示与参数）' : '承接增强（旧版行为）'}`);
+    if (repeatedReplyEvidence(record, records)) lines.push(repeatedReplyEvidence(record, records));
     if (record.origin === 'unassociated' || record.reason === 'unmatched-dispatch') lines.push('归属：未关联请求（可能来自后台任务；不自动归入当前正文生成）。');
-    if (shortReplyEvidence(record)) lines.push(shortReplyEvidence(record));
+    if (shortReplyEvidence(record) && !compactStreamEvidence(record.wire)) lines.push(shortReplyEvidence(record));
     if (record.adjustment) lines.push(`本次思考参数：${record.adjustment.before} → ${record.adjustment.after}`);
     if (record.identification) lines.push(`条目识别：${record.identification}`);
     if (record.applied && ['swipe', 'regenerate'].includes(record.type)) lines.push('本轮为重抽／重新生成；应重新完成原任务，不应仅接写被替换答案的末尾。');

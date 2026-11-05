@@ -1,8 +1,8 @@
-import { planInjection, REASONS, VERSION, normalizeSettings, getLinState } from './core.js?v=1.2.6';
-import { auditPreset, captureInjection, createHistory, planReasoning, requestKey, requestMeta, recordDiagnosis } from './diagnostics.js?v=1.2.6';
-import { installObserver } from './observer.js?v=1.2.6';
-import { analyzeOutput, structureDiagnosis, textDigest } from './structure.js?v=1.2.6';
-import { createRecovery } from './recovery.js?v=1.2.6';
+import { planInjection, REASONS, VERSION, normalizeSettings, getLinState } from './core.js?v=1.2.7';
+import { auditPreset, captureInjection, createHistory, planReasoning, requestKey, requestMeta, recordDiagnosis } from './diagnostics.js?v=1.2.7';
+import { installObserver } from './observer.js?v=1.2.7';
+import { analyzeOutput, structureDiagnosis, textDigest } from './structure.js?v=1.2.7';
+import { createRecovery } from './recovery.js?v=1.2.7';
 
 export function createController({ getContext, getSettings, onStatus = () => {}, networkTarget = globalThis, hasDraft = () => false }) {
     const ctx = getContext();
@@ -71,6 +71,7 @@ export function createController({ getContext, getSettings, onStatus = () => {},
                 ...prior,
                 id: prior?.id || id(), at: prior?.at || new Date().toISOString(), version: VERSION,
                 type: result.type, applied: result.applied, reason: result.reason,
+                requestMode: normalizeSettings(settings).requestMode,
                 origin: 'assembled',
                 manualContinue: forcedContinue,
                 identification: result.identification || 'none',
@@ -83,7 +84,7 @@ export function createController({ getContext, getSettings, onStatus = () => {},
                 tailRoles: result.tailRoles || [], note: result.note || prior?.note || '',
                 injected: result.applied ? result.injected.map(m => ({ role: m.role, content: m.content })) : [],
                 preview: result.applied ? result.injected.map(m => `${m.role}\n${m.content}`).join('\n\n') : '',
-                request: requestMeta(planned), warnings: auditPreset(preset, planned),
+                request: requestMeta(planned), warnings: auditPreset(preset, planned, settings),
                 adjustment: adjustment || prior?.adjustment || null,
             };
             if (result.identification === 'outgoing-exact-2.4') {
@@ -239,7 +240,7 @@ export function createController({ getContext, getSettings, onStatus = () => {},
             finally { manualContinue = false; recoveryRunning = false; }
         },
         preview: request => planInjection(request, getSettings(), { preset: getContext().chatCompletionSettings || {} }),
-        audit: () => auditPreset(getContext().chatCompletionSettings || {}),
+        audit: () => auditPreset(getContext().chatCompletionSettings || {}, {}, getSettings()),
         inspectCurrent() {
             const message = getContext().chat?.findLast(m => m && !m.is_user && !m.is_system);
             if (!message || typeof message.mes !== 'string') return '当前聊天没有可检查的模型回复。';

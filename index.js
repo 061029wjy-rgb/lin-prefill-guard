@@ -1,6 +1,6 @@
-import { DEFAULT_PREFILL, DEFAULT_NUDGE, SETTINGS_KEY, VERSION, REASONS, normalizeSettings, migrateSettings } from './core.js?v=1.2.6';
-import { createController } from './controller.js?v=1.2.6';
-import { formatRecord, recordStatus } from './diagnostics.js?v=1.2.6';
+import { DEFAULT_PREFILL, DEFAULT_NUDGE, SETTINGS_KEY, VERSION, REASONS, normalizeSettings, migrateSettings } from './core.js?v=1.2.7';
+import { createController } from './controller.js?v=1.2.7';
+import { formatRecord, recordStatus } from './diagnostics.js?v=1.2.7';
 
 const INSTANCE_KEY = Symbol.for('lin-prefill-guard.instance');
 let controller;
@@ -38,6 +38,10 @@ function updateStatus(view) {
     if (view) lastView = view;
     if (!panel) return;
     const state = normalizeSettings(settings());
+    for (const key of ['scope', 'mode', 'reasoningMode', 'deliveryGuard', 'enhanceContinue', 'prefill', 'nudge']) {
+        const input = panel.querySelector(`[data-setting="${key}"]`);
+        if (input) input.disabled = state.requestMode === 'observe';
+    }
     const last = lastView?.last;
     const badge = panel.querySelector('.lpg-badge');
     const outcome = last ? recordStatus(last) : { label: '等待请求', state: 'idle' };
@@ -45,6 +49,7 @@ function updateStatus(view) {
     badge.dataset.state = state.enabled ? outcome.state : 'off';
     const status = panel.querySelector('.lpg-status');
     const lines = [];
+    if (state.enabled && state.requestMode === 'observe') lines.push('原样诊断：保留预设的原承接、CoT、角色权限和输出顺序；不追加插件提示或调整思考参数。');
     if (!state.enabled) lines.push('扩展当前关闭，下次请求不注入。以下为最近记录。');
     if (last) {
         if (last.at) lines.push(`最近检查：${new Date(last.at).toLocaleTimeString()} · ${last.type || '未知类型'}`);
@@ -79,7 +84,7 @@ function renderHistory() {
     if (!records.some(r => r.id === selectedRecord)) selectedRecord = records[0]?.id || '';
     list.value = selectedRecord;
     panel.querySelector('.lpg-history-count').textContent = `${records.length} 条匹配 / 最近 ${lastView?.history?.length || 0} 条`;
-    panel.querySelector('.lpg-record-detail').textContent = formatRecord(records.find(r => r.id === selectedRecord));
+    panel.querySelector('.lpg-record-detail').textContent = formatRecord(records.find(r => r.id === selectedRecord), lastView?.history || []);
 }
 
 async function copyText(text) {
@@ -170,15 +175,17 @@ function mount() {
     heading.append(element('span', {}, 'Lin 预填充助手'), element('span', { className: 'lpg-badge' }, '等待请求'));
     panel.append(heading);
     const body = element('div', { className: 'lpg-body' });
-    body.append(hint(`v${VERSION} · 请求发送前整理承接提示。普通消息引导，不是原生预填充。`));
+    body.append(hint(`v${VERSION} · 默认保留预设原请求并取证；承接增强可手动开启。`));
     body.append(checkbox('启用扩展', 'enabled'));
+    body.append(select('请求处理', 'requestMode', [['observe', '原样诊断（默认，不追加提示）'], ['enhance', '承接增强（旧版行为）']]));
+    body.append(hint('从1.2.6升级后默认进入原样诊断，原自定义文本与其他设置仍保留。Lin2.6.4已自带交付与断点续传规则，先保留其原承接条目和顺序。此模式减少插件干预，不保证消除上游拒答或截断。'));
     body.append(select('适用范围', 'scope', [['lin', '仅已识别且启用的 Lin 承接条目（2.1—2.6）'], ['all', '所有 Chat Completion 预设']]));
     body.append(select('注入方式', 'mode', [['user', '单条 user 提示（兼容优先）'], ['pair', 'assistant 承接 + user 执行']]));
     body.append(select('思考预算', 'reasoningMode', [['keep', '沿用当前参数'], ['balanced', '已识别 Gemini：高 / 最大思考降为适中']]));
     body.append(hint('上传的 Lin2.5 / 2.6 均为 auto，可保持“沿用当前参数”。可选降档只用于已识别的 Gemini 文本型号：3.0 Pro 用 low，其他支持型号用 medium；图像与未知型号不猜测。渠道仍可能忽略参数。'));
     body.append(checkbox('启用发送与接口取证（可查看实际发送提示）', 'captureNetwork'));
     body.append(checkbox('Lin2.6系列交付保护：识别三种CoT＋组件完整性', 'deliveryGuard'));
-    body.append(hint('沿用所选CoT栏目与篇幅，不设500字上限。识别空文本、仅注释、异常短回复及带HTML的正文句尾。检查是提示，STOP不代表正文写完。'));
+    body.append(hint('增强模式才追加交付提示；沿用所选CoT篇幅，不设500字上限。取证可区分短流缺结束原因、疑似文字拒答与未闭合注释；这些判断不删除文本、不触发自动请求。'));
     body.append(checkbox('对“继续补全”也加提示（默认关闭）', 'enhanceContinue'));
     body.append(hint('渠道排查：在酒馆原生连接设置中关闭流式，再手动重试一次。必须在生成前切换；仅修改请求中的 stream 字段会使酒馆解析方式与响应不一致。取证现在可识别无标头 SSE、JSON 及协议错配。'));
     body.append(hint('原生继续预填充、后台摘要、用户代写、工具调用和 JSON 结构化请求会自动跳过。'));
@@ -214,9 +221,17 @@ function mount() {
     const inspect = element('button', { type: 'button', className: 'menu_button lpg-button' }, '检查当前回复（不调用模型）');
     inspect.addEventListener('click', () => { auditResult.textContent = controller.inspectCurrent(); });
     body.append(inspect);
+    const copyReply = element('button', { type: 'button', className: 'menu_button lpg-button' }, '复制当前回复原文（含注释）');
+    copyReply.addEventListener('click', async () => {
+        const message = context().chat?.findLast(m => m && !m.is_user && !m.is_system);
+        if (!message || typeof message.mes !== 'string') { auditResult.textContent = '当前没有可复制的模型回复。'; return; }
+        try { await copyText(message.mes); auditResult.textContent = '已复制当前回复原文（含隐藏注释）；没有调用模型或写入诊断历史。分享前请自行检查内容。'; }
+        catch { auditResult.textContent = '浏览器未允许复制；可用酒馆编辑消息查看原文。'; }
+    });
+    body.append(copyReply);
     const recoveryBox = element('details', { className: 'lpg-advanced lpg-recovery' });
     recoveryBox.append(element('summary', {}, '手动补全 / 重生成'));
-    recoveryBox.append(hint('先检查当前最后一条回复。补全会接写它，重生成会由酒馆替换它；都会调用当前连接并可能产生费用。每次点击仅发起一次酒馆生成操作，插件不自动循环重试。'));
+    recoveryBox.append(hint('先检查当前最后一条回复。补全会接写它，重生成会由酒馆替换它；都会调用当前连接并可能产生费用。原样诊断模式完全沿用酒馆原请求。每次点击仅发起一次酒馆生成操作，插件不自动循环重试。'));
     const recoveryFeedback = element('p', { className: 'lpg-hint lpg-audit', role: 'status' });
     const prepare = element('button', { type: 'button', className: 'menu_button lpg-button' }, '检查操作目标（免费）');
     const continueButton = element('button', { type: 'button', className: 'menu_button lpg-button', disabled: true }, '补全当前回复');
