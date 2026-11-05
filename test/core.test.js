@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { planInjection, getLinState, LIN_PROMPT_ID, LIN_24_PREFILL, DEFAULTS, DEFAULT_NUDGE, migrateSettings } from '../core.js';
+import { planInjection, getLinState, LIN_PROMPT_ID, LIN_24_PREFILL, DEFAULTS as OBSERVE_DEFAULTS, DEFAULT_NUDGE, migrateSettings } from '../core.js';
+const DEFAULTS = { ...OBSERVE_DEFAULTS, requestMode: 'enhance' };
 
 export const original = '[Lin｜本轮承接]\n测试用承接条目。';
 export function preset(enabled = true) {
@@ -142,8 +143,12 @@ test('global prompt-order switch wins over another list and the prompt.enabled c
     assert.equal(getLinState(p).active, false);
 });
 
-test('fresh installation defaults to a single user message; pair remains explicit', () => {
-    assert.deepEqual(planInjection(payload(), {}, { preset: preset() }).tailRoles, ['user']);
+test('fresh installation preserves preset messages; enhancement defaults to a single user message', () => {
+    const input = payload();
+    const result = planInjection(input, {}, { preset: preset() });
+    assert.equal(result.reason, 'observe-only');
+    assert.equal(result.messages, input.messages);
+    assert.deepEqual(planInjection(input, { requestMode: 'enhance' }, { preset: preset() }).tailRoles, ['user']);
 });
 test('native prefill in settings is respected even when not copied to generate_data', () => {
     assert.equal(run(payload(), {}, { preset: { ...preset(), assistant_prefill: '开头' } }).reason, 'native-prefill');

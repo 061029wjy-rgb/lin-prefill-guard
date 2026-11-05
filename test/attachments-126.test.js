@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { DEFAULTS, LIN_PROMPT_ID, planInjection } from '../core.js';
+import { DEFAULTS as OBSERVE_DEFAULTS, LIN_PROMPT_ID, planInjection } from '../core.js';
+const DEFAULTS = { ...OBSERVE_DEFAULTS, requestMode: 'enhance' };
 import { COT_VARIANTS, deliveryProfile } from '../delivery.js';
 import { recordStatus, shortReplyEvidence } from '../diagnostics.js';
 

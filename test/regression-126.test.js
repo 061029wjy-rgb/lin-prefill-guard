@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULTS, DEFAULT_PREFILL, CONTINUE_PREFILL, planInjection, LIN_PROMPT_ID } from '../core.js';
+import { DEFAULTS as OBSERVE_DEFAULTS, DEFAULT_PREFILL, CONTINUE_PREFILL, planInjection, LIN_PROMPT_ID } from '../core.js';
+const DEFAULTS = { ...OBSERVE_DEFAULTS, requestMode: 'enhance' };
 import { analyzeOutput, endingDiagnosis, structureDiagnosis, textDigest } from '../structure.js';
 import { recordStatus, recordDiagnosis, compareDelivery, shortReplyEvidence, requestMeta, responseDiagnosis } from '../diagnostics.js';
 import { inspectResponse, installObserver } from '../observer.js';

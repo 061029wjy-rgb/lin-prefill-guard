@@ -23,9 +23,9 @@ test('metadata never captures chats, headers, keys, stops, or provider URLs', ()
 test('budget adjustment is opt-in and does not invent parameters for unknown models', () => {
     const request = { model: 'gemini-4-argon', reasoning_effort: 'max' };
     assert.equal(planReasoning(request, {}), null);
-    assert.deepEqual(planReasoning(request, { reasoningMode: 'balanced' }), { before: 'max', after: 'medium' });
-    assert.equal(planReasoning({ ...request, model: 'gemini-3-pro-preview' }, { reasoningMode: 'balanced' }).after, 'low');
-    assert.equal(planReasoning({ ...request, model: 'unknown-model' }, { reasoningMode: 'balanced' }), null);
+    assert.deepEqual(planReasoning(request, { requestMode: 'enhance', reasoningMode: 'balanced' }), { before: 'max', after: 'medium' });
+    assert.equal(planReasoning({ ...request, model: 'gemini-3-pro-preview' }, { requestMode: 'enhance', reasoningMode: 'balanced' }).after, 'low');
+    assert.equal(planReasoning({ ...request, model: 'unknown-model' }, { requestMode: 'enhance', reasoningMode: 'balanced' }), null);
     assert.equal(request.reasoning_effort, 'max');
 });
 test('reasoning-only, tool-only and unrecognized replies have distinct diagnoses', () => {
@@ -40,7 +40,7 @@ test('history detail distinguishes prepared from sent and avoids claiming delive
     assert.match(formatRecord(record), /不等于模型必定执行/);
 });
 test('supported text-model levels are distinguished from image and unknown Gemini aliases', () => {
-    const settings = { reasoningMode: 'balanced' };
+    const settings = { requestMode: 'enhance', reasoningMode: 'balanced' };
     const req = model => ({ model, reasoning_effort: 'high' });
     assert.equal(planReasoning(req('google/gemini-3.1-pro-preview'), settings).after, 'medium');
     assert.equal(planReasoning(req('gemini-3-pro-preview'), settings).after, 'low');

@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { analyzeOutput, structureDiagnosis } from '../structure.js';
 import { deliveryProfile, deliveryCue, COT_ID } from '../delivery.js';
-import { planInjection, LIN_PROMPT_ID, LIN_24_PREFILL, DEFAULTS } from '../core.js';
+import { planInjection, LIN_PROMPT_ID, LIN_24_PREFILL, DEFAULTS as OBSERVE_DEFAULTS } from '../core.js';
+const DEFAULTS = { ...OBSERVE_DEFAULTS, requestMode: 'enhance' };
 import { inspectResponse } from '../observer.js';
 import { responseDiagnosis, auditPreset } from '../diagnostics.js';
 

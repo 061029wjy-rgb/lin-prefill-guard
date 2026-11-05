@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import { deliveryProfile, deliveryCue, COT_ID, COT_VARIANTS } from '../delivery.js';
-import { planInjection, LIN_PROMPT_ID, LIN_24_PREFILL, DEFAULTS } from '../core.js';
+import { planInjection, LIN_PROMPT_ID, LIN_24_PREFILL, DEFAULTS as OBSERVE_DEFAULTS } from '../core.js';
+const DEFAULTS = { ...OBSERVE_DEFAULTS, requestMode: 'enhance' };
 import { auditPreset, formatRecord, recordStatus, responseDiagnosis } from '../diagnostics.js';
 import { analyzeOutput, structureDiagnosis } from '../structure.js';
 import { inspectResponse } from '../observer.js';
@@ -142,11 +143,11 @@ for(let mask=0;mask<8;mask++)for(const mode of ['user','pair'])for(const type of
 test('actual Lin2.6.2 continue, native-prefill and non-story request protections', {skip:!real}, () => {
     for(const type of ['quiet','impersonate'])assert.equal(planInjection(realRequest(real,type),{}, {preset:real}).applied,false);
     const req=realRequest(real,'continue');
-    assert.equal(planInjection(req,{}, {preset:real}).reason,'continue-disabled');
-    const result=planInjection(req,{enhanceContinue:true},{preset:real});
+    assert.equal(planInjection(req,{requestMode:'enhance'}, {preset:real}).reason,'continue-disabled');
+    const result=planInjection(req,{requestMode:'enhance',enhanceContinue:true},{preset:real});
     assert.equal(result.applied,true);assert.match(result.messages.at(-1).content,/不重启整套/);
     assert.doesNotMatch(result.messages.at(-1).content,/500汉字|13项/);
-    assert.equal(planInjection(req,{enhanceContinue:true},{preset:{...real,continue_prefill:true}}).reason,'native-prefill');
+    assert.equal(planInjection(req,{requestMode:'enhance',enhanceContinue:true},{preset:{...real,continue_prefill:true}}).reason,'native-prefill');
     for(const extra of [{tools:[{type:'function',function:{name:'test'}}]},{response_format:{type:'json_object'}},{assistant_prefill:'已有开头'}]){
         const input={...realRequest(real,'normal'),...extra},before=JSON.stringify(input);
         assert.equal(planInjection(input,{}, {preset:real}).applied,false);assert.equal(JSON.stringify(input),before);

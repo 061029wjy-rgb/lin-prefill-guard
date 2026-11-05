@@ -44,7 +44,7 @@ test('2.6.3 revision and replaced CoT ID use conditional delivery without mutati
     const before = JSON.stringify(preset);
     assert.equal(deliveryProfile(preset).known,true);
     const req = {messages:[{role:'user',content:'写一段日常。'},{role:'assistant',content:LIN_24_PREFILL}],max_tokens:16384,reasoning_effort:'auto'};
-    const result = planInjection(req,{}, {preset});
+    const result = planInjection(req,{requestMode:"enhance"}, {preset});
     assert.equal(result.deliveryGuard,true);
     assert.match(result.messages.at(-1).content,/若本轮实际要求/);
     assert.equal(JSON.stringify(preset),before);

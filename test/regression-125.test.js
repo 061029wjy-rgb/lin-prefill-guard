@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULTS, DEFAULT_PREFILL, REGENERATE_PREFILL, LIN_PROMPT_ID, LIN_24_PREFILL, planInjection, migrateSettings } from '../core.js';
+import { DEFAULTS as OBSERVE_DEFAULTS, DEFAULT_PREFILL, REGENERATE_PREFILL, LIN_PROMPT_ID, LIN_24_PREFILL, planInjection, migrateSettings } from '../core.js';
+const DEFAULTS = { ...OBSERVE_DEFAULTS, requestMode: 'enhance' };
 import { COT_VARIANTS, deliveryProfile, deliveryCue } from '../delivery.js';
 import { analyzeOutput, endingDiagnosis } from '../structure.js';
 import { recordStatus, responseDiagnosis, recordDiagnosis, compareDelivery, requestMeta, formatRecord } from '../diagnostics.js';
@@ -33,7 +34,7 @@ for (const mode of ['user', 'pair']) for (const type of ['swipe', 'regenerate'])
 test('normal and continue keep separate task semantics; user custom text and pair choice survive', () => {
     const p = preset(), req = { messages: [{ role: 'user', content: '日常。' }] };
     assert.ok(planInjection(req, DEFAULTS, { preset: p }).injected[0].content.includes(DEFAULT_PREFILL));
-    const result = planInjection({ ...req, type: 'continue' }, { enhanceContinue: true }, { preset: p });
+    const result = planInjection({ ...req, type: 'continue' }, { requestMode: 'enhance', enhanceContinue: true }, { preset: p });
     assert.match(result.messages.at(-1).content, /只补已有回复/);
     assert.doesNotMatch(result.messages.at(-1).content, /本次是重抽/);
     const custom = { ...DEFAULTS, mode: 'pair', prefill: '用户自定义承接', nudge: '用户自定义执行' };

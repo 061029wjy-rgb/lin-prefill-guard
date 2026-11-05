@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createController } from '../controller.js';
-import { DEFAULTS, LIN_PROMPT_ID } from '../core.js';
+import { DEFAULTS as OBSERVE_DEFAULTS, LIN_PROMPT_ID } from '../core.js';
+const DEFAULTS = { ...OBSERVE_DEFAULTS, requestMode: 'enhance' };
 
 class Bus {
     listeners = new Map();
