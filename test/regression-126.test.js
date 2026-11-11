@@ -233,7 +233,7 @@ test('explicit stop remains visible after late transport completion and blocks s
     const f = controllerFixture(), req = f.request(); await f.bus.emit('start', 'normal'); await f.bus.emit('request', req);
     await f.bus.emit('stop'); await f.send(req);
     f.ctx.chat.push({ is_user: false, mes: '部分回复' }); await f.bus.emit('message', 1, 'normal');
-    assert.equal(recordStatus(f.controller.snapshot().last).label, '用户已停止');
+    assert.equal(recordStatus(f.controller.snapshot().last).label, '客户端已停止');
     assert.equal(f.controller.snapshot().last.rendered, undefined); assert.equal(f.controller.snapshot().generating, false);
     f.controller.dispose();
 });
