@@ -37,7 +37,8 @@ test('mode migration retains custom text and disabled settings; explicit later c
     for (const key of Object.keys(old)) assert.equal(next[key], old[key]);
     assert.deepEqual(migrateSettings(next), next);
     assert.equal(migrateSettings({ ...next, requestMode: 'enhance' }).requestMode, 'enhance');
-    assert.equal(DEFAULTS.requestMode, 'observe');
+    assert.equal(migrateSettings().requestMode, DEFAULTS.requestMode);
+    assert.equal(DEFAULTS.requestMode, 'gemini4');
 });
 
 test('explicit legacy enhancement still works; diagnostic mode cannot mutate a frozen request', () => {

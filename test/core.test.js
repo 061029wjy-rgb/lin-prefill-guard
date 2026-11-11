@@ -146,7 +146,8 @@ test('global prompt-order switch wins over another list and the prompt.enabled c
 test('fresh installation preserves preset messages; enhancement defaults to a single user message', () => {
     const input = payload();
     const result = planInjection(input, {}, { preset: preset() });
-    assert.equal(result.reason, 'observe-only');
+    assert.equal(result.reason, 'g4-other');
+    assert.equal(planInjection(input, { requestMode: 'observe' }, { preset: preset() }).reason, 'observe-only');
     assert.equal(result.messages, input.messages);
     assert.deepEqual(planInjection(input, { requestMode: 'enhance' }, { preset: preset() }).tailRoles, ['user']);
 });
