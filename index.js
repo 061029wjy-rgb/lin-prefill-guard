@@ -1,7 +1,7 @@
-import { gemini4Target, lin282Layout } from './gemini4.js?v=1.2.8';
-import { DEFAULT_PREFILL, DEFAULT_NUDGE, SETTINGS_KEY, VERSION, REASONS, normalizeSettings, migrateSettings } from './core.js?v=1.2.8';
-import { createController } from './controller.js?v=1.2.8';
-import { formatRecord, recordStatus } from './diagnostics.js?v=1.2.8';
+import { gemini4Target, lin282Layout } from './gemini4.js?v=1.2.9';
+import { DEFAULT_PREFILL, DEFAULT_NUDGE, SETTINGS_KEY, VERSION, REASONS, normalizeSettings, migrateSettings } from './core.js?v=1.2.9';
+import { createController } from './controller.js?v=1.2.9';
+import { formatRecord, recordStatus } from './diagnostics.js?v=1.2.9';
 
 const INSTANCE_KEY = Symbol.for('lin-prefill-guard.instance');
 let controller;

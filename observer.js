@@ -1,5 +1,5 @@
 /** Read-only observation of ST's single chat endpoint. Never retries or rewrites a response. */
-import { analyzeOutput, textDigest } from './structure.js?v=1.2.8';
+import { analyzeOutput, textDigest } from './structure.js?v=1.2.9';
 const textBuffers = new WeakMap();
 const textValue = value => typeof value === 'string' ? value : Array.isArray(value)
     ? value.filter(p => !p?.thought && p?.type !== 'thinking').map(p => typeof p?.text === 'string' ? p.text : '').join('') : '';
@@ -174,10 +174,12 @@ export async function inspectResponse(response, { maxBytes = MAX_BYTES, timeoutM
     } catch { stats.captureLimited = true; stats.limitReason = 'read-error'; }
     finally {
         clearTimeout(timer); unregister(); reader.releaseLock(); stats.durationMs = Date.now() - started;
+        // Snapshot at the end of reading; unrelated host cleanup during the
+        // asynchronous digest must not relabel an already completed response.
+        if (signal?.aborted) stats.aborted = true;
         stats.output = analyzeOutput(textBuffers.get(stats) || '');
         stats.textDigest = await textDigest(textBuffers.get(stats) || '');
         textBuffers.delete(stats);
-        if (signal?.aborted) stats.aborted = true;
     }
     if (expectedStream === true && ['json', 'ndjson'].includes(stats.transport)) stats.protocolMismatch = 'stream-request-non-sse';
     if (expectedStream === false && stats.transport === 'sse') stats.protocolMismatch = 'json-request-sse';

@@ -1,8 +1,8 @@
 /** Pure request planning. This module never sends requests or changes chat history. */
-import { deliveryProfile, deliveryCue } from './delivery.js?v=1.2.8';
-export const VERSION = '1.2.8';
+import { deliveryProfile, deliveryCue } from './delivery.js?v=1.2.9';
+export const VERSION = '1.2.9';
 export const SETTINGS_KEY = 'lin_prefill_guard_v1';
-import { LIN_PROMPT_ID, planGemini4 } from './gemini4.js?v=1.2.8';
+import { LIN_PROMPT_ID, planGemini4 } from './gemini4.js?v=1.2.9';
 export { LIN_PROMPT_ID };
 export const DEFAULT_PREFILL = '已定位本轮任务：以聊天记录中真实用户的最新请求为准。续写承接最后有效正文，修订处理指定范围，戏外问题直接回答。沿用已启用的视角、角色控制和输出格式；下一条回复交付所需结果，不重演已完成的情节，不以接收确认或写作计划代替结果。';
 export const REGENERATE_PREFILL = '已定位本轮任务：重新回答聊天记录中真实用户的最新请求。以该请求之前的有效剧情为起点；被替换或未选中的回复不作为已发生剧情，不从其结尾续写。沿用已启用的视角、角色控制和输出格式，交付本轮完整的新回答。';

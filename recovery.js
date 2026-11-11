@@ -1,6 +1,10 @@
-import { isGemini4Segment } from './gemini4.js?v=1.2.8';
-import { hasServiceRestriction } from './diagnostics.js?v=1.2.8';
-import { analyzeOutput } from './structure.js?v=1.2.8';
+import { isGemini4Segment } from './gemini4.js?v=1.2.9';
+import { hasApiError, hasServiceRestriction } from './diagnostics.js?v=1.2.9';
+import { analyzeOutput } from './structure.js?v=1.2.9';
+
+// A saved placeholder after an API error is not a model prefix. Preserve the
+// user's ability to resume genuine partial text received before a later error.
+const errorWithoutText = record => hasApiError(record?.wire) && !(record.wire.visibleChars > 0);
 
 /** Explicit user-click actions only. No timers, retries, direct API calls or chat edits. */
 export function createRecovery({ getContext, getRecord = () => null, isBusy = () => false, hasDraft = () => false }) {
@@ -29,8 +33,10 @@ export function createRecovery({ getContext, getRecord = () => null, isBusy = ()
         if (isGemini4Segment(record))
             return { ok: false, message: '此回复要求服务端凭据续传；插件的补全与重生成都会新开一次生成，不能恢复该解码。若愿意另开一轮，可使用酒馆原生操作。' };
         const output = analyzeOutput(message.mes);
-        const plan = { ok: true, canContinue: !!message.mes.trim(),
-            message: !message.mes.trim() ? '当前回复没有文本，可选择重生成。'
+        const apiError = errorWithoutText(record);
+        const plan = { ok: true, canContinue: !!message.mes.trim() && !apiError,
+            message: apiError ? '这次请求已确认接口错误，且未确认收到模型文本；不能把占位或错误提示当正文补全。处理接口问题后可手动重生成。'
+                : !message.mes.trim() ? '当前回复没有文本，可选择重生成。'
                 : output.onlyNotes ? '当前只有注释或思考，可补全后续正文；也可选择重生成。'
                 : '确认当前回复确实未完时选择补全；需要重新回答时选择重生成。不会自动判断剧情是否完整。' };
         targets.set(plan, { chat: ctx.chat, chatId: ctx.chatId, characterId: ctx.characterId,
@@ -48,13 +54,15 @@ export function createRecovery({ getContext, getRecord = () => null, isBusy = ()
             || target.message.mes !== target.text || target.message.swipe_id !== target.swipe)
             return { ok: false, message: '聊天、回复内容或所选版本已改变，请重新检查；未发送请求。' };
         if (action === 'continue' && !plan.canContinue)
-            return { ok: false, message: '空回复没有可承接的文本，请选择重生成。' };
+            return { ok: false, message: '当前回复没有可补全的正文，请核对接口诊断后选择重生成。' };
         // Recheck late-arriving transport evidence immediately before invoking the host.
         const record = getRecord(ctx.chat, target.message);
         if (hasServiceRestriction(record?.wire) || record?.wire?.refusal)
             return { ok: false, message: '接口刚返回了限制或拒绝标志，未发起补全或重生成。' };
         if (isGemini4Segment(record))
             return { ok: false, message: '刚收到上游分段标记；当前操作不能携带服务端续传凭据，未另发请求。' };
+        if (action === 'continue' && errorWithoutText(record))
+            return { ok: false, message: '接口刚返回了错误，且未确认收到模型文本；未把占位或错误提示作为正文补全。处理接口问题后可手动重生成。' };
         targets = new WeakMap();
         running = true;
         try {

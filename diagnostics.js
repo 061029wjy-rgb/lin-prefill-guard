@@ -1,7 +1,7 @@
-import { isGemini4Segment } from './gemini4.js?v=1.2.8';
-import { getLinState, normalizeSettings, plainText, VERSION } from './core.js?v=1.2.8';
-import { deliveryProfile } from './delivery.js?v=1.2.8';
-import { structureDiagnosis, endingDiagnosis, replySignalDiagnosis } from './structure.js?v=1.2.8';
+import { isGemini4Segment } from './gemini4.js?v=1.2.9';
+import { getLinState, normalizeSettings, plainText, VERSION } from './core.js?v=1.2.9';
+import { deliveryProfile } from './delivery.js?v=1.2.9';
+import { structureDiagnosis, endingDiagnosis, replySignalDiagnosis } from './structure.js?v=1.2.9';
 
 export const HISTORY_KEY = 'lin_prefill_guard_history_v2';
 export const HISTORY_LIMIT = 50;
@@ -125,7 +125,7 @@ export function auditPreset(preset = {}, request = {}, settings = {}) {
     else if (lin.active === false) notes.push('Lin 承接条目已关闭。');
     const profile = deliveryProfile(preset, request.type || 'normal');
     if (profile.cotConflict) notes.push(`同时启用了 ${profile.cotSources.length} 套Lin_CoT：${profile.cotSources.map(x => x.variant).join('、')}；重复规则可能增加预算与格式冲突。插件不擅自关闭条目，请只保留需要的一套。`);
-    if (profile.known && profile.cotEnabled) notes.push('Lin2.6启用了前置Lin_CoT注释；注释文本会消耗生成预算，旧版“正文字符数”包含这类文本，不能据此认定已有正文。');
+    if (profile.known && profile.cotEnabled) notes.push('Lin预设启用了前置Lin_CoT注释；注释文本会消耗生成预算，旧版“正文字符数”包含这类文本，不能据此认定已有正文。');
     if (profile.known && profile.cotEnabled && !profile.sceneEnabled) notes.push('固定ID对应的可选场景条目关闭；未启用模块的专属要求不应由CoT间接启用。世界书或替代条目是否另有要求，需以实际请求为准。');
     const stops = Array.isArray(request.stop) ? request.stop : typeof request.stop === 'string' ? [request.stop] : [];
     const count = Object.values(requestMeta(request).stopCounts).reduce((a, b) => a + b, 0);
@@ -152,6 +152,21 @@ export function planReasoning(request, settings) {
 
 export function hasServiceRestriction(stats = {}) {
     return !!stats?.blockReason || /SAFETY|PROHIBITED|BLOCKLIST|RECITATION|CONTENT_FILTER|SPII|MODEL_ARMOR/i.test(stats?.finishReason || '');
+}
+
+export function hasApiError(stats = {}) {
+    return stats?.httpStatus >= 400 || stats?.apiError === true;
+}
+
+function apiErrorDiagnosis(stats) {
+    const codes = [stats.httpStatus ? `HTTP ${stats.httpStatus}` : '',
+        stats.apiStatus ? `上游错误 ${stats.apiStatus}` : ''].filter(Boolean).join('；');
+    const status = stats.apiStatus || stats.httpStatus;
+    const detail = status === 429 ? '接口报告限流或配额不足。'
+        : status === 503 ? '上游服务暂时不可用。'
+        : [500, 502, 504].includes(status) ? '服务端或网关处理失败。'
+        : [401, 403].includes(status) ? '请检查连接的认证与访问权限。' : '';
+    return `接口错误${codes ? `（${codes}）` : ''}；${detail}查看酒馆原错误提示。${stats.retryAfterSeconds != null ? `接口建议至少等待 ${stats.retryAfterSeconds} 秒；插件不会自动发送。` : ''}`;
 }
 
 /** This transport shape is not proof of a refusal or a server error. */
@@ -187,12 +202,15 @@ export function shortReplyEvidence(record = {}) {
 }
 
 export function responseDiagnosis(stats = {}) {
-    if (stats.aborted) return '请求已中止；不据此判断模型空回。';
-    if (stats.networkError) return '网络请求失败；没有取得可分析的响应。';
-    if (stats.httpStatus >= 400 || stats.apiError) return `接口错误${stats.httpStatus ? `（HTTP ${stats.httpStatus}${stats.apiStatus ? `，错误码 ${stats.apiStatus}` : ''}）` : ''}；查看酒馆原错误提示。${stats.retryAfterSeconds != null ? `接口建议至少等待 ${stats.retryAfterSeconds} 秒；插件不会自动发送。` : ''}`;
+    // Host error handling can abort a request after reading an error frame.
+    // An abort signal must not hide an already observed provider result.
+    if (hasApiError(stats)) return apiErrorDiagnosis(stats);
     if (hasServiceRestriction(stats)) return `接口报告拦截或限制：${stats.blockReason || stats.finishReason}；不是已证实的token耗尽或网络断流。插件不能解除服务端限制，不自动续写或重试。${structureDiagnosis(stats.output) ? `附带结构问题：${structureDiagnosis(stats.output)}。` : ''}`;
-    if (stats.incomplete && !/MAX_TOKENS|LENGTH/i.test(stats.finishReason || '')) return '接口标记响应未完成，具体原因未提供；不能直接认定输出预算耗尽。';
     if (stats.refusal) return '接口返回了明确拒绝字段；这是拒答而非空回，插件不针对该限制自动补全或重试。';
+    if (String(stats.finishReason || '').toUpperCase() === 'CONTINUATION') return `接口要求凭据续传：本段已识别文本 ${stats.visibleChars || 0} 字符；需要后端携带上游续传凭据继续同一次生成，普通酒馆“继续”会新开一轮。`;
+    if (stats.aborted) return '请求已中止；中止信号不能区分手动停止与客户端错误处理，不据此判断模型空回。';
+    if (stats.networkError) return '网络请求失败；没有取得可分析的响应。';
+    if (stats.incomplete && !/MAX_TOKENS|LENGTH/i.test(stats.finishReason || '')) return '接口标记响应未完成，具体原因未提供；不能直接认定输出预算耗尽。';
     const structural = structureDiagnosis(stats.output);
     const reply = replySignalDiagnosis(stats.output);
     if (stats.output?.onlyNotes) return `接口文本字段 ${stats.visibleChars || 0} 字符，其中Lin_CoT ${stats.output.cotChars} 字符；${structural}。${/^(?:STOP|END_TURN)$/i.test(stats.finishReason || '') ? '渠道报告STOP/正常结束，但这不等于正文已交付。' : /MAX_TOKENS|LENGTH/i.test(stats.finishReason || '') ? '渠道同时报告输出上限；思考/注释阶段可能已耗尽预算。' : '还需结合结束原因判断提前停写或传输中断。'}`;
@@ -217,13 +235,14 @@ export function responseDiagnosis(stats = {}) {
 /** Keep saved-text evidence visible even when a later clone inspection finishes. */
 export function recordStatus(record = {}) {
     const w = record.wire || {};
-    if (record.clientStopped) return { label: '用户已停止', state: 'warn' };
-    if (w.aborted) return { label: '请求已中止', state: 'warn' };
-    if (w.networkError || w.httpStatus >= 400 || w.apiError) return { label: '请求失败', state: 'warn' };
+    if (hasApiError(w)) return { label: '请求失败', state: 'warn' };
     if (hasServiceRestriction(w))
         return { label: '服务端限制', state: 'warn' };
     if (w.refusal) return { label: '接口拒答', state: 'warn' };
     if (isGemini4Segment(record)) return { label: '上游要求续传', state: 'warn' };
+    if (record.clientStopped) return { label: '客户端已停止', state: 'warn' };
+    if (w.aborted) return { label: '请求已中止', state: 'warn' };
+    if (w.networkError) return { label: '请求失败', state: 'warn' };
     if (/MAX_TOKENS|LENGTH/i.test(w.finishReason || ''))
         return { label: '输出预算结束', state: 'warn' };
     if (w.incomplete) return { label: '接口响应未完成', state: 'warn' };
@@ -258,9 +277,9 @@ export function profileMismatch(record = {}) {
 
 export function recordDiagnosis(record = {}) {
     const lines = [];
-    if (record.clientStopped) lines.push('该次生成由用户停止或客户端中止，不能据此认定模型自行空回。');
     if (record.origin === 'unassociated' || record.reason === 'unmatched-dispatch') lines.push('未关联请求：可能是后台任务或其他扩展调用，不用于判定当前聊天回复是否完成。');
     if (record.wire) lines.push(responseDiagnosis(record.wire));
+    if (record.clientStopped) lines.push('客户端报告停止；事件未区分手动停止与错误处理，不会覆盖已观察到的接口错误或限制。');
     if (isGemini4Segment(record)) lines.push('上游分段要求凭据续传；普通酒馆继续会新开一次生成。');
     if (profileMismatch(record)) lines.push(profileMismatch(record));
     if (shortReplyEvidence(record) && !compactStreamEvidence(record.wire)) lines.push(shortReplyEvidence(record));
@@ -291,6 +310,9 @@ export function compareDelivery(record = {}) {
 export function formatRecord(record, records = []) {
     if (!record) return '尚无记录。正常发送一条消息后可在这里查询。';
     const lines = [`记录 ${record.id} · v${record.version || VERSION}`, `时间：${record.at}`, `类型：${record.type} · 模型：${record.request?.model || '未提供'}`, `组装：${record.explanation}`, `发送：${record.dispatch?.label || '未观察到浏览器发送，或未开启网络取证'}`];
+    const source = record.dispatch?.request?.source || record.request?.source;
+    const sourceLabel = { makersuite: 'Google AI Studio', vertexai: 'Vertex AI', custom: '自定义接口', openai: 'OpenAI 兼容连接' }[source];
+    lines.push(`连接来源：${sourceLabel || '其他或未提供'}（按酒馆请求参数；不证明实际上游服务）。`);
     if (record.requestMode) lines.push(`请求处理：${record.requestMode === 'gemini4' ? 'Lin 2.8.2 × Gemini 4 承接兼容' : record.requestMode === 'observe' ? '原样诊断（不改写提示与参数）' : '承接增强（旧版行为）'}`);
     if (record.gemini4) lines.push('适配目标：' + record.gemini4.model + (record.gemini4.indirect ? '（按连接别名识别，实际后端未知）' : '（按酒馆连接识别）'));
     if (isGemini4Segment(record)) lines.push('此响应为上游分段，需要由后端在原请求上携带续传凭据。' + (record.wire.continuationTokenSeen ? '浏览器看到了凭据字段，插件不保存或重发其值。' : '浏览器未确认收到凭据。'));
@@ -303,7 +325,7 @@ export function formatRecord(record, records = []) {
     const sent = record.dispatch?.request || record.request;
     if (sent?.inputTextChars != null) lines.push(`请求文本约 ${sent.inputTextChars} 字符（非token数，图片等非文本内容不计）。`);
     if (sent?.stopCounts) lines.push(`发送参数快照：max_tokens=${sent.maxTokens ?? '未提供'}；max_completion_tokens=${sent.maxCompletionTokens ?? '未提供'}；停止序列声明数：stop=${sent.stopCounts.stop}、stopSequences=${sent.stopCounts.stopSequences}、generationConfig=${sent.stopCounts.generationConfig}。仅记录数量；后端仍可能另加停止条件。`);
-    if (record.deliveryProfile?.known) lines.push(`Lin2.6交付约束：${record.deliveryGuard ? '已加入本次请求' : '未加入'}；已识别的固定组件（非完整清单）：${record.deliveryProfile.components.join('、') || '未识别到'}；输入提示词 ${record.deliveryProfile.inputPromptChars} 字符（不是输出）。`);
+    if (record.deliveryProfile?.known) lines.push(`Lin交付约束：${record.deliveryGuard ? '已加入本次请求' : '未加入'}；已识别的固定组件（非完整清单）：${record.deliveryProfile.components.join('、') || '未识别到'}；输入提示词 ${record.deliveryProfile.inputPromptChars} 字符（不是输出）。`);
     if (record.deliveryProfile?.cotSources) lines.push(`按预设启用顺序识别CoT：${record.deliveryProfile.cotSources.map(x => `${x.variant}（${x.columns || '未知'}栏）`).join('、') || '未识别到启用条目'}；这不是后端实际执行证明。`);
     if (record.wire?.emptyFinalSnapshot) lines.push('渠道最终空message帧未覆盖前面已收到的增量文本；原响应未被修改。');
     if (profileMismatch(record)) lines.push(profileMismatch(record));

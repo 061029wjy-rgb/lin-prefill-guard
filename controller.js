@@ -1,9 +1,9 @@
-import { orderProof } from './gemini4.js?v=1.2.8';
-import { planInjection, REASONS, VERSION, normalizeSettings, getLinState } from './core.js?v=1.2.8';
-import { auditPreset, captureInjection, createHistory, planReasoning, requestKey, requestMeta, recordDiagnosis } from './diagnostics.js?v=1.2.8';
-import { installObserver } from './observer.js?v=1.2.8';
-import { analyzeOutput, structureDiagnosis, textDigest } from './structure.js?v=1.2.8';
-import { createRecovery } from './recovery.js?v=1.2.8';
+import { orderProof } from './gemini4.js?v=1.2.9';
+import { planInjection, REASONS, VERSION, normalizeSettings, getLinState } from './core.js?v=1.2.9';
+import { auditPreset, captureInjection, createHistory, planReasoning, requestKey, requestMeta, recordDiagnosis } from './diagnostics.js?v=1.2.9';
+import { installObserver } from './observer.js?v=1.2.9';
+import { analyzeOutput, structureDiagnosis, textDigest } from './structure.js?v=1.2.9';
+import { createRecovery } from './recovery.js?v=1.2.9';
 
 export function createController({ getContext, getSettings, onStatus = () => {}, networkTarget = globalThis, hasDraft = () => false }) {
     const ctx = getContext();
@@ -217,7 +217,7 @@ export function createController({ getContext, getSettings, onStatus = () => {},
     }
     function onStop() {
         generating = false;
-        if (active) patch(active.id, { clientStopped: true, lifecycle: '用户停止或客户端中止了生成。' });
+        if (active) patch(active.id, { clientStopped: true, lifecycle: '客户端报告停止；事件未区分手动停止与错误处理。' });
         active = null;
     }
     function onChatChanged() { active = null; savedTarget = null; recovery.invalidate(); }

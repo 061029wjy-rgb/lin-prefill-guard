@@ -132,5 +132,8 @@ export function planGemini4(request, preset, type, skipReason) {
 }
 
 export function isGemini4Segment(r) {
-    return !!r?.gemini4 && String(r.wire?.finishReason || '').toUpperCase() === 'CONTINUATION';
+    // Protocol evidence also applies in observe/enhance modes and older records.
+    const request = r?.dispatch?.request || r?.request;
+    const target = r?.gemini4 || gemini4Target({ model: request?.model, chat_completion_source: request?.source });
+    return !!target && String(r?.wire?.finishReason || '').toUpperCase() === 'CONTINUATION';
 }
