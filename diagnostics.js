@@ -1,6 +1,7 @@
-import { getLinState, normalizeSettings, plainText, VERSION } from './core.js?v=1.2.7';
-import { deliveryProfile } from './delivery.js?v=1.2.7';
-import { structureDiagnosis, endingDiagnosis, replySignalDiagnosis } from './structure.js?v=1.2.7';
+import { isGemini4Segment } from './gemini4.js?v=1.2.8';
+import { getLinState, normalizeSettings, plainText, VERSION } from './core.js?v=1.2.8';
+import { deliveryProfile } from './delivery.js?v=1.2.8';
+import { structureDiagnosis, endingDiagnosis, replySignalDiagnosis } from './structure.js?v=1.2.8';
 
 export const HISTORY_KEY = 'lin_prefill_guard_history_v2';
 export const HISTORY_LIMIT = 50;
@@ -114,7 +115,7 @@ export function auditPreset(preset = {}, request = {}, settings = {}) {
     if (active.some(p => /【Lin_CoT模式与交付】/.test(p.content || '') && /【断点续传】/.test(p.content || ''))) {
         notes.push(normalizeSettings(settings).requestMode === 'enhance'
             ? '预设已含CoT交付与断点续传规则；当前增强模式仍会替换原承接条目并追加提示，存在重复干预。可切换原样诊断保留预设原顺序与原文。'
-            : '预设已含CoT交付与断点续传规则；原样诊断模式保留这些规则及原承接条目，不再叠加插件提示。');
+            : '预设已含CoT交付与断点续传规则，当前模式不另加交付提示。预设中的“续传”文字不等于服务商的解码凭据。');
     }
     if (preset.enable_web_search === true) notes.push('预设开启网页搜索；无联网需要时可关闭，减少工具及渠道兼容变量。');
     if (Number(preset.openai_max_context) > 1048576) notes.push('本地上下文设置超过 1M；实际可用窗口取决于接口及真实模型，不能从渠道别名推断。本地设置不会扩大服务商窗口。');
@@ -222,6 +223,7 @@ export function recordStatus(record = {}) {
     if (hasServiceRestriction(w))
         return { label: '服务端限制', state: 'warn' };
     if (w.refusal) return { label: '接口拒答', state: 'warn' };
+    if (isGemini4Segment(record)) return { label: '上游要求续传', state: 'warn' };
     if (/MAX_TOKENS|LENGTH/i.test(w.finishReason || ''))
         return { label: '输出预算结束', state: 'warn' };
     if (w.incomplete) return { label: '接口响应未完成', state: 'warn' };
@@ -259,6 +261,7 @@ export function recordDiagnosis(record = {}) {
     if (record.clientStopped) lines.push('该次生成由用户停止或客户端中止，不能据此认定模型自行空回。');
     if (record.origin === 'unassociated' || record.reason === 'unmatched-dispatch') lines.push('未关联请求：可能是后台任务或其他扩展调用，不用于判定当前聊天回复是否完成。');
     if (record.wire) lines.push(responseDiagnosis(record.wire));
+    if (isGemini4Segment(record)) lines.push('上游分段要求凭据续传；普通酒馆继续会新开一次生成。');
     if (profileMismatch(record)) lines.push(profileMismatch(record));
     if (shortReplyEvidence(record) && !compactStreamEvidence(record.wire)) lines.push(shortReplyEvidence(record));
     if (record.rendered) lines.push(record.rendered.chars > 0
@@ -288,7 +291,9 @@ export function compareDelivery(record = {}) {
 export function formatRecord(record, records = []) {
     if (!record) return '尚无记录。正常发送一条消息后可在这里查询。';
     const lines = [`记录 ${record.id} · v${record.version || VERSION}`, `时间：${record.at}`, `类型：${record.type} · 模型：${record.request?.model || '未提供'}`, `组装：${record.explanation}`, `发送：${record.dispatch?.label || '未观察到浏览器发送，或未开启网络取证'}`];
-    if (record.requestMode) lines.push(`请求处理：${record.requestMode === 'observe' ? '原样诊断（不改写提示与参数）' : '承接增强（旧版行为）'}`);
+    if (record.requestMode) lines.push(`请求处理：${record.requestMode === 'gemini4' ? 'Lin 2.8.2 × Gemini 4 承接兼容' : record.requestMode === 'observe' ? '原样诊断（不改写提示与参数）' : '承接增强（旧版行为）'}`);
+    if (record.gemini4) lines.push('适配目标：' + record.gemini4.model + (record.gemini4.indirect ? '（按连接别名识别，实际后端未知）' : '（按酒馆连接识别）'));
+    if (isGemini4Segment(record)) lines.push('此响应为上游分段，需要由后端在原请求上携带续传凭据。' + (record.wire.continuationTokenSeen ? '浏览器看到了凭据字段，插件不保存或重发其值。' : '浏览器未确认收到凭据。'));
     if (repeatedReplyEvidence(record, records)) lines.push(repeatedReplyEvidence(record, records));
     if (record.origin === 'unassociated' || record.reason === 'unmatched-dispatch') lines.push('归属：未关联请求（可能来自后台任务；不自动归入当前正文生成）。');
     if (shortReplyEvidence(record) && !compactStreamEvidence(record.wire)) lines.push(shortReplyEvidence(record));

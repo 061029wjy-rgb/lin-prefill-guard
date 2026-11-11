@@ -1,6 +1,7 @@
-import { DEFAULT_PREFILL, DEFAULT_NUDGE, SETTINGS_KEY, VERSION, REASONS, normalizeSettings, migrateSettings } from './core.js?v=1.2.7';
-import { createController } from './controller.js?v=1.2.7';
-import { formatRecord, recordStatus } from './diagnostics.js?v=1.2.7';
+import { gemini4Target, lin282Layout } from './gemini4.js?v=1.2.8';
+import { DEFAULT_PREFILL, DEFAULT_NUDGE, SETTINGS_KEY, VERSION, REASONS, normalizeSettings, migrateSettings } from './core.js?v=1.2.8';
+import { createController } from './controller.js?v=1.2.8';
+import { formatRecord, recordStatus } from './diagnostics.js?v=1.2.8';
 
 const INSTANCE_KEY = Symbol.for('lin-prefill-guard.instance');
 let controller;
@@ -40,7 +41,7 @@ function updateStatus(view) {
     const state = normalizeSettings(settings());
     for (const key of ['scope', 'mode', 'reasoningMode', 'deliveryGuard', 'enhanceContinue', 'prefill', 'nudge']) {
         const input = panel.querySelector(`[data-setting="${key}"]`);
-        if (input) input.disabled = state.requestMode === 'observe';
+        if (input) input.disabled = state.requestMode !== 'enhance';
     }
     const last = lastView?.last;
     const badge = panel.querySelector('.lpg-badge');
@@ -50,11 +51,15 @@ function updateStatus(view) {
     const status = panel.querySelector('.lpg-status');
     const lines = [];
     if (state.enabled && state.requestMode === 'observe') lines.push('原样诊断：保留预设的原承接、CoT、角色权限和输出顺序；不追加插件提示或调整思考参数。');
+    if (state.enabled && state.requestMode === 'gemini4') lines.push('Gemini 4 兼容：只处理 Lin 2.8.2 的独立承接条目；不添加 user 催写，不更改生成预算。官方接口不接受自定义回复前缀。');
     if (!state.enabled) lines.push('扩展当前关闭，下次请求不注入。以下为最近记录。');
     if (last) {
         if (last.at) lines.push(`最近检查：${new Date(last.at).toLocaleTimeString()} · ${last.type || '未知类型'}`);
         lines.push(last.explanation);
-        if (last.applied) {
+        if (last.requestMode === 'gemini4') {
+            if (last.dispatch?.label) lines.push(last.dispatch.label);
+            else if (last.gemini4) lines.push('只看到组装事件，尚未核对浏览器发送。');
+        } else if (last.applied) {
             lines.push(`原承接条目：${last.removedOriginal ? '仅在本次请求中替换' : '未移除'}；字符净变化：${last.netChars >= 0 ? '+' : ''}${last.netChars}`);
             lines.push(last.dispatch?.label || '已组装；尚未观察到发送，或网络取证未开启。');
         }
@@ -175,11 +180,11 @@ function mount() {
     heading.append(element('span', {}, 'Lin 预填充助手'), element('span', { className: 'lpg-badge' }, '等待请求'));
     panel.append(heading);
     const body = element('div', { className: 'lpg-body' });
-    body.append(hint(`v${VERSION} · 默认保留预设原请求并取证；承接增强可手动开启。`));
+    body.append(hint(`v${VERSION} · Lin 2.8.2 · Gemini 4 Argon / Carbon 承接兼容。`));
     body.append(checkbox('启用扩展', 'enabled'));
-    body.append(select('请求处理', 'requestMode', [['observe', '原样诊断（默认，不追加提示）'], ['enhance', '承接增强（旧版行为）']]));
-    body.append(hint('从1.2.6升级后默认进入原样诊断，原自定义文本与其他设置仍保留。Lin2.6.4已自带交付与断点续传规则，先保留其原承接条目和顺序。此模式减少插件干预，不保证消除上游拒答或截断。'));
-    body.append(select('适用范围', 'scope', [['lin', '仅已识别且启用的 Lin 承接条目（2.1—2.6）'], ['all', '所有 Chat Completion 预设']]));
+    body.append(select('请求处理', 'requestMode', [['gemini4', 'Lin 2.8.2 × Gemini 4（承接兼容）'], ['observe', '原样诊断（不改请求）'], ['enhance', '承接增强（旧版提示）']]));
+    body.append(hint('新安装默认开启承接兼容；升级保留原先选择。使用 Lin 2.8.2 搭配 Argon / Carbon 时选择第一项。正常顺序不改；只有误放在末尾且能唯一核实的 Lin 承接才会被移回。'));
+    body.append(select('适用范围', 'scope', [['lin', '仅已识别且启用的 Lin 承接条目'], ['all', '所有 Chat Completion 预设']]));
     body.append(select('注入方式', 'mode', [['user', '单条 user 提示（兼容优先）'], ['pair', 'assistant 承接 + user 执行']]));
     body.append(select('思考预算', 'reasoningMode', [['keep', '沿用当前参数'], ['balanced', '已识别 Gemini：高 / 最大思考降为适中']]));
     body.append(hint('上传的 Lin2.5 / 2.6 均为 auto，可保持“沿用当前参数”。可选降档只用于已识别的 Gemini 文本型号：3.0 Pro 用 low，其他支持型号用 medium；图像与未知型号不猜测。渠道仍可能忽略参数。'));
@@ -208,6 +213,14 @@ function mount() {
     const selftest = element('button', { type: 'button', className: 'menu_button lpg-button' }, '本地自检（不调用模型）');
     const selfResult = element('p', { className: 'lpg-hint lpg-selftest', role: 'status' });
     selftest.addEventListener('click', () => {
+        if (normalizeSettings(settings()).requestMode === 'gemini4') {
+            const ctx = context(), preset = ctx.chatCompletionSettings || {};
+            const target = gemini4Target({ chat_completion_source: preset.chat_completion_source, model: ctx.getChatCompletionModel?.(preset), reverse_proxy: preset.reverse_proxy });
+            const layout = lin282Layout(preset);
+            selfResult.textContent = !target ? REASONS['g4-other'] : layout.reason ? REASONS[layout.reason]
+                : '已识别 Lin 2.8.2 与 ' + target.model + (target.indirect ? '（按别名识别）' : '') + '。这里只核对配置；发送后才能核对两条消息的位置，不代表原生前缀已生效。';
+            return;
+        }
         const result = controller.preview({ type: 'normal', messages: [{ role: 'user', content: '本地自检样例：接着写一个普通场景。' }] });
         selfResult.textContent = result.applied
             ? `本地组装成功：末尾 ${result.tailRoles.join(' → ')}。未发送网络请求；实际模型效果需在聊天中验证。`

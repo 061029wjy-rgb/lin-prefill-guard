@@ -1,5 +1,5 @@
 /** Read-only observation of ST's single chat endpoint. Never retries or rewrites a response. */
-import { analyzeOutput, textDigest } from './structure.js?v=1.2.7';
+import { analyzeOutput, textDigest } from './structure.js?v=1.2.8';
 const textBuffers = new WeakMap();
 const textValue = value => typeof value === 'string' ? value : Array.isArray(value)
     ? value.filter(p => !p?.thought && p?.type !== 'thinking').map(p => typeof p?.text === 'string' ? p.text : '').join('') : '';
@@ -39,6 +39,9 @@ export function addResponseData(stats, data) {
             if (p.functionCall) stats.toolCalls = true;
         }
         if (candidate.finishReason) stats.finishReason = safeCode(candidate.finishReason);
+        if (typeof candidate.continuationToken === 'string' && candidate.continuationToken.length > 0
+            || typeof candidate.continuation_token === 'string' && candidate.continuation_token.length > 0)
+            stats.continuationTokenSeen = true;
     }
     const choice = data.choices?.find(c => c.index === 0) || data.choices?.[0];
     if (choice && (choice.index === undefined || choice.index === 0)) {

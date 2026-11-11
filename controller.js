@@ -1,8 +1,9 @@
-import { planInjection, REASONS, VERSION, normalizeSettings, getLinState } from './core.js?v=1.2.7';
-import { auditPreset, captureInjection, createHistory, planReasoning, requestKey, requestMeta, recordDiagnosis } from './diagnostics.js?v=1.2.7';
-import { installObserver } from './observer.js?v=1.2.7';
-import { analyzeOutput, structureDiagnosis, textDigest } from './structure.js?v=1.2.7';
-import { createRecovery } from './recovery.js?v=1.2.7';
+import { orderProof } from './gemini4.js?v=1.2.8';
+import { planInjection, REASONS, VERSION, normalizeSettings, getLinState } from './core.js?v=1.2.8';
+import { auditPreset, captureInjection, createHistory, planReasoning, requestKey, requestMeta, recordDiagnosis } from './diagnostics.js?v=1.2.8';
+import { installObserver } from './observer.js?v=1.2.8';
+import { analyzeOutput, structureDiagnosis, textDigest } from './structure.js?v=1.2.8';
+import { createRecovery } from './recovery.js?v=1.2.8';
 
 export function createController({ getContext, getSettings, onStatus = () => {}, networkTarget = globalThis, hasDraft = () => false }) {
     const ctx = getContext();
@@ -72,6 +73,7 @@ export function createController({ getContext, getSettings, onStatus = () => {},
                 id: prior?.id || id(), at: prior?.at || new Date().toISOString(), version: VERSION,
                 type: result.type, applied: result.applied, reason: result.reason,
                 requestMode: normalizeSettings(settings).requestMode,
+                ...(result.gemini4 ? { gemini4: result.gemini4 } : {}),
                 origin: 'assembled',
                 manualContinue: forcedContinue,
                 identification: result.identification || 'none',
@@ -102,7 +104,7 @@ export function createController({ getContext, getSettings, onStatus = () => {},
             if (!prior) response = null;
             history.put(report);
             requestRecords.set(request, report);
-            const item = { id: report.id, key, injected: report.injected, type: result.type, model: report.request.model, at: Date.now() };
+            const item = { id: report.id, key, witness: result.orderWitness, source: result.gemini4?.source, injected: report.injected, type: result.type, model: report.request.model, at: Date.now() };
             const existing = pending.findIndex(x => x.id === report.id);
             if (existing >= 0) pending.splice(existing, 1);
             if (!report.dispatch) pending.push(item);
@@ -124,7 +126,7 @@ export function createController({ getContext, getSettings, onStatus = () => {},
             if (!Array.isArray(request.messages) || ['quiet', 'impersonate'].includes(request.type)) return null;
             const key = requestKey(request);
             const recent = pending.filter(x => Date.now() - x.at < 180000);
-            const exact = recent.filter(x => x.key === key);
+            const exact = recent.filter(x => x.key === key && (!x.source || x.source === request.chat_completion_source));
             let candidate = exact.length === 1 ? exact[0] : null;
             let correlation = 'exact';
             if (!candidate && exact.length === 0) {
@@ -159,9 +161,12 @@ export function createController({ getContext, getSettings, onStatus = () => {},
                 && injected.every((m, i) => m.role === candidate.injected[i].role && m.content === candidate.injected[i].content);
             const tail = verified && injected.at(-1).atEnd && injected.at(-1).index === request.messages.length - 1
                 && injected.every((m, i) => m.index === request.messages.length - injected.length + i);
+            const order = orderProof(request.messages, candidate.witness);
             patch(candidate.id, { dispatch: {
                 at: new Date().toISOString(), correlation, injected, verified, tail, request: requestMeta(request),
-                label: injected.length ? `已观察到发送；注入文本${tail ? '位于末尾' : '存在，但后方还有内容'}${injected.some(m => m.match === 'segment') ? '；完整提示被合并入同角色消息' : ''}${correlation === 'injection-match' ? '；其他内容在组装后发生变化' : ''}` : '已观察到发送；本次未注入',
+                ...(order ? { linOrder: order } : {}),
+                label: order === 'cue-before-user' ? '浏览器发送时已核对：Lin 原承接在 user 确认前；未使用原生回复前缀。'
+                    : order ? '浏览器发送时未确认 Lin 承接在 user 确认前。' : injected.length ? `已观察到发送；注入文本${tail ? '位于末尾' : '存在，但后方还有内容'}${injected.some(m => m.match === 'segment') ? '；完整提示被合并入同角色消息' : ''}${correlation === 'injection-match' ? '；其他内容在组装后发生变化' : ''}` : '已观察到发送；本次未注入',
             } });
             return candidate.id;
         },

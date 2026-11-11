@@ -1,8 +1,9 @@
 /** Pure request planning. This module never sends requests or changes chat history. */
-import { deliveryProfile, deliveryCue } from './delivery.js?v=1.2.7';
-export const VERSION = '1.2.7';
+import { deliveryProfile, deliveryCue } from './delivery.js?v=1.2.8';
+export const VERSION = '1.2.8';
 export const SETTINGS_KEY = 'lin_prefill_guard_v1';
-export const LIN_PROMPT_ID = 'e898d676-f02e-4868-bc51-33761e294df6';
+import { LIN_PROMPT_ID, planGemini4 } from './gemini4.js?v=1.2.8';
+export { LIN_PROMPT_ID };
 export const DEFAULT_PREFILL = '已定位本轮任务：以聊天记录中真实用户的最新请求为准。续写承接最后有效正文，修订处理指定范围，戏外问题直接回答。沿用已启用的视角、角色控制和输出格式；下一条回复交付所需结果，不重演已完成的情节，不以接收确认或写作计划代替结果。';
 export const REGENERATE_PREFILL = '已定位本轮任务：重新回答聊天记录中真实用户的最新请求。以该请求之前的有效剧情为起点；被替换或未选中的回复不作为已发生剧情，不从其结尾续写。沿用已启用的视角、角色控制和输出格式，交付本轮完整的新回答。';
 export const REGENERATE_NUDGE = '本次是重抽／重新生成，不是继续补全。重新交付原任务的完整回答，不只补上一版本的末尾；不复述此前已确定的剧情。';
@@ -11,7 +12,7 @@ export const CONTINUE_NUDGE = '本次仅补齐上一条回复的可见断点，�
 export const CONTINUE_PREFILL = '本次任务是补全当前回复，已有文本保持有效，只交付可见断点之后缺失的部分。若仅有未完注释，先补齐并闭合，再交付正文；已完成的正文与组件不重复。沿用当前视角、角色权限及格式，不另开新场景或新一轮前置摘要。';
 export const DEFAULTS = Object.freeze({
     enabled: true,
-    requestMode: 'observe',
+    requestMode: 'gemini4',
     scope: 'lin',
     mode: 'user',
     enhanceContinue: false,
@@ -23,6 +24,14 @@ export const DEFAULTS = Object.freeze({
 });
 
 export const REASONS = Object.freeze({
+    'g4-other': '此模式仅适配 Gemini 4 Argon / Carbon 的 AI Studio、Vertex 或自定义聊天连接；本次请求保持原样。',
+    'g4-not-lin282': '未确认 Lin 2.8.2 的承接与尾部确认条目；本次保持原样。',
+    'g4-disabled': 'Lin 承接或尾部确认未启用，未移动消息。',
+    'g4-uncertain': '无法唯一核对 Lin 独立承接与确认的位置（可能已合并、重复或被编辑），未移动或补写任何消息。',
+    'g4-ready': 'Lin 原承接在 user 确认前；顺序正确，原请求未修改。Gemini 4 官方接口不支持自定回复前缀。',
+    'g4-restored': '已将误放在末尾的 Lin 承接移回预设确认之前；沿用原文，没有新增消息或使用原生回复前缀。',
+    'g4-foreign-tail': '发现另一条末尾 assistant 消息，不是已识别的 Lin 承接；未改动其他回复。',
+    'g4-continue': '继续生成交给酒馆；没有把上次故事或预设说明当成新的模型前缀。',
     'observe-only': '原样诊断模式：保留预设组装的请求，不注入承接或交付提示，不调整参数。',
     applied: '已整理本次请求，末尾为 assistant → user。',
     'applied-user': '已整理本次请求，末尾为 user 承接提示。',
@@ -53,7 +62,8 @@ export function normalizeSettings(value = {}) {
     const input = value && typeof value === 'object' ? value : {};
     return {
         enabled: typeof input.enabled === 'boolean' ? input.enabled : DEFAULTS.enabled,
-        requestMode: input.requestMode === 'enhance' ? 'enhance' : 'observe',
+        requestMode: ['observe', 'enhance', 'gemini4'].includes(input.requestMode) ? input.requestMode
+            : Object.keys(input).length ? 'observe' : DEFAULTS.requestMode,
         scope: input.scope === 'all' ? 'all' : 'lin',
         mode: input.mode === 'pair' ? 'pair' : 'user',
         enhanceContinue: input.enhanceContinue === true,
@@ -65,10 +75,10 @@ export function normalizeSettings(value = {}) {
     };
 }
 
-/** Preserve saved text/choices; old installs enter observe mode until explicitly changed. */
+/** New installs use the scoped adapter; do not change the chosen mode of an existing installation. */
 export function migrateSettings(value = {}) {
     const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
-    const next = { ...DEFAULTS, ...input };
+    const next = { ...DEFAULTS, ...input, requestMode: normalizeSettings(input).requestMode };
     if (next.nudge === '请现在完成上述真实用户请求。这里是任务提示，不是新的剧情；不要复述提示。') {
         next.nudge = DEFAULT_NUDGE;
     }
@@ -142,6 +152,13 @@ export function planInjection(request, rawSettings = {}, { preset = {}, ownedMes
     if (type === 'quiet') return skip('quiet');
     if (type === 'impersonate') return skip('impersonate');
     if (!['normal', 'regenerate', 'swipe', 'continue'].includes(type)) return skip('unsupported-type');
+    if (settings.requestMode === 'gemini4') {
+        const reserved = [request.assistant_prefill, preset.assistant_prefill].some(v => typeof v === 'string' && v.trim())
+            || request.messages.some(m => m.prefix === true);
+        const skipReason = reserved ? 'native-prefill' : hasActiveToolFlow(request) ? 'tools'
+            : request.json_schema || (request.response_format?.type && request.response_format.type !== 'text') ? 'structured' : '';
+        return planGemini4(request, preset, type, skipReason);
+    }
     if (settings.requestMode === 'observe') {
         return { ...skip('observe-only'), identification: getLinState(preset).known ? 'preset' : 'none',
             profile: deliveryProfile(preset, type), messages: request.messages, injected: [],

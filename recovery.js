@@ -1,5 +1,6 @@
-import { hasServiceRestriction } from './diagnostics.js?v=1.2.7';
-import { analyzeOutput } from './structure.js?v=1.2.7';
+import { isGemini4Segment } from './gemini4.js?v=1.2.8';
+import { hasServiceRestriction } from './diagnostics.js?v=1.2.8';
+import { analyzeOutput } from './structure.js?v=1.2.8';
 
 /** Explicit user-click actions only. No timers, retries, direct API calls or chat edits. */
 export function createRecovery({ getContext, getRecord = () => null, isBusy = () => false, hasDraft = () => false }) {
@@ -25,6 +26,8 @@ export function createRecovery({ getContext, getRecord = () => null, isBusy = ()
         const record = getRecord(ctx.chat, message);
         if (hasServiceRestriction(record?.wire) || record?.wire?.refusal)
             return { ok: false, message: '当前回复含接口明确限制或拒绝标志；此入口不用于重试该限制。请先检查原任务与服务商提示。' };
+        if (isGemini4Segment(record))
+            return { ok: false, message: '此回复要求服务端凭据续传；插件的补全与重生成都会新开一次生成，不能恢复该解码。若愿意另开一轮，可使用酒馆原生操作。' };
         const output = analyzeOutput(message.mes);
         const plan = { ok: true, canContinue: !!message.mes.trim(),
             message: !message.mes.trim() ? '当前回复没有文本，可选择重生成。'
@@ -50,6 +53,8 @@ export function createRecovery({ getContext, getRecord = () => null, isBusy = ()
         const record = getRecord(ctx.chat, target.message);
         if (hasServiceRestriction(record?.wire) || record?.wire?.refusal)
             return { ok: false, message: '接口刚返回了限制或拒绝标志，未发起补全或重生成。' };
+        if (isGemini4Segment(record))
+            return { ok: false, message: '刚收到上游分段标记；当前操作不能携带服务端续传凭据，未另发请求。' };
         targets = new WeakMap();
         running = true;
         try {
