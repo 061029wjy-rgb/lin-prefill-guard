@@ -1,5 +1,5 @@
 /** Read-only observation of ST's single chat endpoint. Never retries or rewrites a response. */
-import { analyzeOutput, textDigest } from './structure.js?v=1.2.9';
+import { analyzeOutput, textDigest } from './structure.js?v=1.3.0';
 const textBuffers = new WeakMap();
 const textValue = value => typeof value === 'string' ? value : Array.isArray(value)
     ? value.filter(p => !p?.thought && p?.type !== 'thinking').map(p => typeof p?.text === 'string' ? p.text : '').join('') : '';
@@ -82,6 +82,11 @@ export function addResponseData(stats, data) {
     const output = usage?.candidatesTokenCount ?? usage?.completion_tokens ?? usage?.output_tokens ?? usage?.total_output_tokens;
     const prompt = usage?.promptTokenCount ?? usage?.prompt_tokens ?? usage?.input_tokens;
     const total = usage?.totalTokenCount ?? usage?.total_tokens;
+    if (typeof thought === 'number' || typeof output === 'number') {
+        const kind = usage === data.usageMetadata && (usage?.candidatesTokenCount != null || usage?.thoughtsTokenCount != null)
+            ? 'google' : 'other';
+        stats.usageKind = stats.usageKind && stats.usageKind !== kind ? 'mixed' : kind;
+    }
     if (typeof thought === 'number') stats.thoughtTokens = thought;
     if (typeof output === 'number') stats.outputTokens = output;
     if (typeof prompt === 'number') stats.promptTokens = prompt;

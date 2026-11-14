@@ -1,7 +1,7 @@
-import { isGemini4Segment } from './gemini4.js?v=1.2.9';
-import { getLinState, normalizeSettings, plainText, VERSION } from './core.js?v=1.2.9';
-import { deliveryProfile } from './delivery.js?v=1.2.9';
-import { structureDiagnosis, endingDiagnosis, replySignalDiagnosis } from './structure.js?v=1.2.9';
+import { isGemini4Segment } from './gemini4.js?v=1.3.0';
+import { getLinState, normalizeSettings, plainText, VERSION } from './core.js?v=1.3.0';
+import { deliveryProfile } from './delivery.js?v=1.3.0';
+import { structureDiagnosis, endingDiagnosis, replySignalDiagnosis } from './structure.js?v=1.3.0';
 
 export const HISTORY_KEY = 'lin_prefill_guard_history_v2';
 export const HISTORY_LIMIT = 50;
@@ -186,7 +186,7 @@ export function repeatedReplyEvidence(record = {}, records = []) {
     const w = record.wire || {};
     if (!compactStreamEvidence(w) || !w.textDigest || record.reason === 'unmatched-dispatch') return '';
     const count = new Set(records.filter(r => r.reason !== 'unmatched-dispatch'
-        && r.request?.model === record.request?.model && compactStreamEvidence(r.wire)
+        && r.request?.model === record.request?.model && (r.dispatch?.request?.source || r.request?.source) === (record.dispatch?.request?.source || record.request?.source) && compactStreamEvidence(r.wire)
         && r.wire?.textDigest === w.textDigest).map(r => r.id)).size;
     return count > 1 ? `同一模型的相同短文本在最近记录中出现 ${count} 次（SHA-256一致）；可能是固定提示，摘要值不能还原内容或证明拒答。` : '';
 }
@@ -201,13 +201,22 @@ export function shortReplyEvidence(record = {}) {
         ? `短回复待核：收到 ${size} 字符且未发现预设所选的Lin_CoT。可能是简短答复、戏外任务、错误提示或拒答；不能据此认定空回或自动重试。` : '';
 }
 
-export function responseDiagnosis(stats = {}) {
+export function responseDiagnosis(stats = {}, sent = {}) {
     // Host error handling can abort a request after reading an error frame.
     // An abort signal must not hide an already observed provider result.
     if (hasApiError(stats)) return apiErrorDiagnosis(stats);
     if (hasServiceRestriction(stats)) return `接口报告拦截或限制：${stats.blockReason || stats.finishReason}；不是已证实的token耗尽或网络断流。插件不能解除服务端限制，不自动续写或重试。${structureDiagnosis(stats.output) ? `附带结构问题：${structureDiagnosis(stats.output)}。` : ''}`;
     if (stats.refusal) return '接口返回了明确拒绝字段；这是拒答而非空回，插件不针对该限制自动补全或重试。';
     if (String(stats.finishReason || '').toUpperCase() === 'CONTINUATION') return `接口要求凭据续传：本段已识别文本 ${stats.visibleChars || 0} 字符；需要后端携带上游续传凭据继续同一次生成，普通酒馆“继续”会新开一轮。`;
+    if (/^(?:MAX_TOKENS|LENGTH)$/i.test(stats.finishReason || '')) {
+        const t = stats.thoughtTokens, c = stats.outputTokens, limit = sent?.maxTokens;
+        const google = stats.usageKind === 'google' || (stats.usageKind == null && sent?.source === 'vertexai' &&
+            t > 0 && Number.isSafeInteger(stats.promptTokens) && stats.totalTokens - stats.promptTokens === t + c);
+        const split = google && [t,c].every(v => Number.isSafeInteger(v) && v >= 0);
+        const usage = split ? ` 思考 ${t} + 候选输出 ${c} = ${t+c} token${limit === t+c ? '，恰好用尽本次发送的输出上限' : ''}。` : '';
+        const structure = structureDiagnosis(stats.output);
+        return `接口报告 ${stats.finishReason}：达到输出预算上限，回复可能在此截断。${usage}${stats.output ? ' 注释外文本 ' + stats.output.nonCommentChars + ' 字符；不能把思考或注释当作正文。' : ''}${structure ? ' '+structure+'。' : ''}${stats.captureLimited || stats.parseErrors ? ' 本地取证不完整。' : ''}`;
+    }
     if (stats.aborted) return '请求已中止；中止信号不能区分手动停止与客户端错误处理，不据此判断模型空回。';
     if (stats.networkError) return '网络请求失败；没有取得可分析的响应。';
     if (stats.incomplete && !/MAX_TOKENS|LENGTH/i.test(stats.finishReason || '')) return '接口标记响应未完成，具体原因未提供；不能直接认定输出预算耗尽。';
@@ -240,11 +249,11 @@ export function recordStatus(record = {}) {
         return { label: '服务端限制', state: 'warn' };
     if (w.refusal) return { label: '接口拒答', state: 'warn' };
     if (isGemini4Segment(record)) return { label: '上游要求续传', state: 'warn' };
+    if (/MAX_TOKENS|LENGTH/i.test(w.finishReason || ''))
+        return { label: '输出预算结束', state: 'warn' };
     if (record.clientStopped) return { label: '客户端已停止', state: 'warn' };
     if (w.aborted) return { label: '请求已中止', state: 'warn' };
     if (w.networkError) return { label: '请求失败', state: 'warn' };
-    if (/MAX_TOKENS|LENGTH/i.test(w.finishReason || ''))
-        return { label: '输出预算结束', state: 'warn' };
     if (w.incomplete) return { label: '接口响应未完成', state: 'warn' };
     if (w.protocolMismatch || w.streamMessageEnvelope) return { label: '响应协议异常', state: 'warn' };
     const output = record.rendered?.output || w.output;
@@ -278,7 +287,7 @@ export function profileMismatch(record = {}) {
 export function recordDiagnosis(record = {}) {
     const lines = [];
     if (record.origin === 'unassociated' || record.reason === 'unmatched-dispatch') lines.push('未关联请求：可能是后台任务或其他扩展调用，不用于判定当前聊天回复是否完成。');
-    if (record.wire) lines.push(responseDiagnosis(record.wire));
+    if (record.wire) lines.push(responseDiagnosis(record.wire, record.dispatch?.request || record.request));
     if (record.clientStopped) lines.push('客户端报告停止；事件未区分手动停止与错误处理，不会覆盖已观察到的接口错误或限制。');
     if (isGemini4Segment(record)) lines.push('上游分段要求凭据续传；普通酒馆继续会新开一次生成。');
     if (profileMismatch(record)) lines.push(profileMismatch(record));
@@ -313,12 +322,13 @@ export function formatRecord(record, records = []) {
     const source = record.dispatch?.request?.source || record.request?.source;
     const sourceLabel = { makersuite: 'Google AI Studio', vertexai: 'Vertex AI', custom: '自定义接口', openai: 'OpenAI 兼容连接' }[source];
     lines.push(`连接来源：${sourceLabel || '其他或未提供'}（按酒馆请求参数；不证明实际上游服务）。`);
-    if (record.requestMode) lines.push(`请求处理：${record.requestMode === 'gemini4' ? 'Lin 2.8.2 × Gemini 4 承接兼容' : record.requestMode === 'observe' ? '原样诊断（不改写提示与参数）' : '承接增强（旧版行为）'}`);
+    if (record.requestMode) lines.push(`请求处理：${record.requestMode === 'gemini4-story' ? 'Vertex 正文承接（Lin 2.8.2）' : record.requestMode === 'gemini4' ? 'Lin 2.8.2 × Gemini 4 承接兼容' : record.requestMode === 'observe' ? '原样诊断（不改写提示与参数）' : '承接增强（旧版行为）'}`);
     if (record.gemini4) lines.push('适配目标：' + record.gemini4.model + (record.gemini4.indirect ? '（按连接别名识别，实际后端未知）' : '（按酒馆连接识别）'));
     if (isGemini4Segment(record)) lines.push('此响应为上游分段，需要由后端在原请求上携带续传凭据。' + (record.wire.continuationTokenSeen ? '浏览器看到了凭据字段，插件不保存或重发其值。' : '浏览器未确认收到凭据。'));
     if (repeatedReplyEvidence(record, records)) lines.push(repeatedReplyEvidence(record, records));
     if (record.origin === 'unassociated' || record.reason === 'unmatched-dispatch') lines.push('归属：未关联请求（可能来自后台任务；不自动归入当前正文生成）。');
     if (shortReplyEvidence(record) && !compactStreamEvidence(record.wire)) lines.push(shortReplyEvidence(record));
+    if (record.handoff) lines.push('本轮正文承接：原规则在前，原 assistant 承接和短 user 确认在最后。' + (record.handoff.cap ? ' 本次组装的输出上限：16,384 → 32,768；以实际发送与回包为准。' : ' 未更改输出上限。'));
     if (record.adjustment) lines.push(`本次思考参数：${record.adjustment.before} → ${record.adjustment.after}`);
     if (record.identification) lines.push(`条目识别：${record.identification}`);
     if (record.applied && ['swipe', 'regenerate'].includes(record.type)) lines.push('本轮为重抽／重新生成；应重新完成原任务，不应仅接写被替换答案的末尾。');
@@ -330,7 +340,7 @@ export function formatRecord(record, records = []) {
     if (record.wire?.emptyFinalSnapshot) lines.push('渠道最终空message帧未覆盖前面已收到的增量文本；原响应未被修改。');
     if (profileMismatch(record)) lines.push(profileMismatch(record));
     if (record.presetState) lines.push(`设置快照：${record.presetState.promptCount} 条提示；识别=${record.presetState.known}；开关=${record.presetState.active ?? '未知'}`);
-    if (record.wire) lines.push(`接口：${responseDiagnosis(record.wire)}`, `结束原因：${record.wire.finishReason || record.wire.blockReason || '渠道未提供'}`, `思考 token：${record.wire.thoughtTokens ?? '渠道未提供'} · 生成 token（渠道口径，可能含思考）：${record.wire.outputTokens ?? '渠道未提供'}`);
+    if (record.wire) lines.push(`接口：${responseDiagnosis(record.wire, record.dispatch?.request || record.request)}`, `结束原因：${record.wire.finishReason || record.wire.blockReason || '渠道未提供'}`, `思考 token：${record.wire.thoughtTokens ?? '渠道未提供'} · ${record.wire.usageKind === 'google' ? '候选输出 token（不含原生思考）' : '生成 token（渠道口径，可能含思考）'}：${record.wire.outputTokens ?? '渠道未提供'}`);
     if (record.wire) lines.push(`输入 token：${record.wire.promptTokens ?? '渠道未提供'} · 总 token：${record.wire.totalTokens ?? '渠道未提供'} · 请求至取证结束：${record.wire.totalDurationMs ?? '旧记录未提供'} ms`);
     const ending = record.rendered?.output?.ending || record.wire?.output?.ending;
     if (ending?.checked === false) lines.push(`句尾检查未适用（${ending.reason || '旧记录未记录原因'}）；这不表示句尾完整。`);

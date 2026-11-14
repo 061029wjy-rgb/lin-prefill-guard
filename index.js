@@ -1,7 +1,7 @@
-import { gemini4Target, lin282Layout } from './gemini4.js?v=1.2.9';
-import { DEFAULT_PREFILL, DEFAULT_NUDGE, SETTINGS_KEY, VERSION, REASONS, normalizeSettings, migrateSettings } from './core.js?v=1.2.9';
-import { createController } from './controller.js?v=1.2.9';
-import { formatRecord, recordStatus } from './diagnostics.js?v=1.2.9';
+import { gemini4Target, lin282Layout } from './gemini4.js?v=1.3.0';
+import { DEFAULT_PREFILL, DEFAULT_NUDGE, SETTINGS_KEY, VERSION, REASONS, normalizeSettings, migrateSettings } from './core.js?v=1.3.0';
+import { createController } from './controller.js?v=1.3.0';
+import { formatRecord, recordStatus } from './diagnostics.js?v=1.3.0';
 
 const INSTANCE_KEY = Symbol.for('lin-prefill-guard.instance');
 let controller;
@@ -43,6 +43,8 @@ function updateStatus(view) {
         const input = panel.querySelector(`[data-setting="${key}"]`);
         if (input) input.disabled = state.requestMode !== 'enhance';
     }
+    const capBox = panel.querySelector('[data-setting="storyMoreTokens"]');
+    if (capBox) capBox.disabled = state.requestMode !== 'gemini4-story';
     const last = lastView?.last;
     const badge = panel.querySelector('.lpg-badge');
     const outcome = last ? recordStatus(last) : { label: '等待请求', state: 'idle' };
@@ -52,11 +54,12 @@ function updateStatus(view) {
     const lines = [];
     if (state.enabled && state.requestMode === 'observe') lines.push('原样诊断：保留预设的原承接、CoT、角色权限和输出顺序；不追加插件提示或调整思考参数。');
     if (state.enabled && state.requestMode === 'gemini4') lines.push('Gemini 4 兼容：只处理 Lin 2.8.2 的独立承接条目；不添加 user 催写，不更改生成预算。官方接口不接受自定义回复前缀。');
+    if (state.enabled && state.requestMode === 'gemini4-story') lines.push('Vertex 正文承接：仅重排核实过的 Lin 2.8.2 条目，让原承接紧贴简短确认；不修改预设文件。');
     if (!state.enabled) lines.push('扩展当前关闭，下次请求不注入。以下为最近记录。');
     if (last) {
         if (last.at) lines.push(`最近检查：${new Date(last.at).toLocaleTimeString()} · ${last.type || '未知类型'}`);
         lines.push(last.explanation);
-        if (last.requestMode === 'gemini4') {
+        if (['gemini4','gemini4-story'].includes(last.requestMode)) {
             if (last.dispatch?.label) lines.push(last.dispatch.label);
             else if (last.gemini4) lines.push('只看到组装事件，尚未核对浏览器发送。');
         } else if (last.applied) {
@@ -180,10 +183,12 @@ function mount() {
     heading.append(element('span', {}, 'Lin 预填充助手'), element('span', { className: 'lpg-badge' }, '等待请求'));
     panel.append(heading);
     const body = element('div', { className: 'lpg-body' });
-    body.append(hint(`v${VERSION} · Lin 2.8.2 · Gemini 4 Argon / Carbon 承接兼容。`));
+    body.append(hint(`v${VERSION} · Lin 2.8.2 · Gemini 4 Argon / Carbon / Hydrogen 承接兼容。`));
     body.append(checkbox('启用扩展', 'enabled'));
-    body.append(select('请求处理', 'requestMode', [['gemini4', 'Lin 2.8.2 × Gemini 4（承接兼容）'], ['observe', '原样诊断（不改请求）'], ['enhance', '承接增强（旧版提示）']]));
-    body.append(hint('新安装默认开启承接兼容；升级保留原先选择。使用 Lin 2.8.2 搭配 Argon / Carbon 时选择第一项。正常顺序不改；只有误放在末尾且能唯一核实的 Lin 承接才会被移回。'));
+    body.append(select('请求处理', 'requestMode', [['gemini4', 'Lin 2.8.2 × Gemini 4（承接兼容）'], ['gemini4-story', 'Vertex 正文承接（Lin 2.8.2）'], ['observe', '原样诊断（不改请求）'], ['enhance', '承接增强（旧版提示）']]));
+    body.append(hint('新安装默认开启承接兼容；升级保留原先选择。仅核对顺序选「承接兼容」；在直接 Vertex 上让原承接紧贴短确认，选「Vertex 正文承接」。正常顺序不改；只有误放在末尾且能唯一核实的 Lin 承接才会被移回。'));
+    body.append(checkbox('正文承接时，如原上限恰为 16,384，放宽到 32,768（可能增加用时和费用）', 'storyMoreTokens'));
+    body.append(hint('Vertex 正文承接保留原栏目和正文要求，移除末尾强制最大思考的一段；不强设思考等级或 CoT 字数。放宽上限为可选项。'));
     body.append(select('适用范围', 'scope', [['lin', '仅已识别且启用的 Lin 承接条目'], ['all', '所有 Chat Completion 预设']]));
     body.append(select('注入方式', 'mode', [['user', '单条 user 提示（兼容优先）'], ['pair', 'assistant 承接 + user 执行']]));
     body.append(select('思考预算', 'reasoningMode', [['keep', '沿用当前参数'], ['balanced', '已识别 Gemini：高 / 最大思考降为适中']]));
@@ -213,7 +218,7 @@ function mount() {
     const selftest = element('button', { type: 'button', className: 'menu_button lpg-button' }, '本地自检（不调用模型）');
     const selfResult = element('p', { className: 'lpg-hint lpg-selftest', role: 'status' });
     selftest.addEventListener('click', () => {
-        if (normalizeSettings(settings()).requestMode === 'gemini4') {
+        if (['gemini4','gemini4-story'].includes(normalizeSettings(settings()).requestMode)) {
             const ctx = context(), preset = ctx.chatCompletionSettings || {};
             const target = gemini4Target({ chat_completion_source: preset.chat_completion_source, model: ctx.getChatCompletionModel?.(preset), reverse_proxy: preset.reverse_proxy });
             const layout = lin282Layout(preset);

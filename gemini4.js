@@ -8,8 +8,8 @@ export function gemini4Target(request = {}) {
     const source = request.chat_completion_source;
     if (!['makersuite', 'vertexai', 'custom'].includes(source)) return null;
     const model = String(request.model || '').trim().toLowerCase();
-    // Match the two explicit IDs, including channel labels and their /fc and /vs variants.
-    const match = /(?:^|[-/:\s])gemini[-_ ]?4[-_ ]?(argon|carbon)(?:\/(?:fc|vs))?$/.exec(model);
+    // Match the explicit model IDs, including channel labels and their /fc and /vs variants.
+    const match = /(?:^|[-/:\s])gemini[-_ ]?4[-_ ]?(argon|carbon|hydrogen)(?:\/(?:fc|vs))?$/.exec(model);
     if (!match || (model.match(/gemini[-_ ]?4/gi) || []).length !== 1) return null;
     return { model: 'gemini-4-' + match[1], source,
         indirect: source === 'custom' || !!request.reverse_proxy || model !== 'gemini-4-' + match[1] };
@@ -59,6 +59,7 @@ function simpleText(m) {
     const b = Array.isArray(m.content) && m.content.length === 1 && m.content[0];
     return b?.type === 'text' && typeof b.text === 'string' && Object.keys(b).every(k => k === 'type' || k === 'text') ? b.text : null;
 }
+export const plainAnchor = simpleText;
 const equal = (m, p) => m?.role === p.role && simpleText(m) === p.content;
 function locate(messages, p) {
     const indices = [];
@@ -69,6 +70,10 @@ export function orderProof(messages, proof) {
     if (!proof || !Array.isArray(messages)) return null;
     const a = locate(messages, proof.cue), u = locate(messages, proof.confirm);
     if (a.length !== 1 || u.length !== 1) return 'unknown';
+    if (proof.rules) {
+        const r = locate(messages, proof.rules);
+        if (r.length !== 1 || r[0] + 1 !== a[0] || a[0] + 1 !== u[0] || u[0] !== messages.length - 1) return 'unknown';
+    }
     return a[0] < u[0] ? 'cue-before-user' : 'out-of-order';
 }
 function toolHistory(messages) {

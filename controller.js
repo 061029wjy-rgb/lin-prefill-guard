@@ -1,9 +1,9 @@
-import { orderProof } from './gemini4.js?v=1.2.9';
-import { planInjection, REASONS, VERSION, normalizeSettings, getLinState } from './core.js?v=1.2.9';
-import { auditPreset, captureInjection, createHistory, planReasoning, requestKey, requestMeta, recordDiagnosis } from './diagnostics.js?v=1.2.9';
-import { installObserver } from './observer.js?v=1.2.9';
-import { analyzeOutput, structureDiagnosis, textDigest } from './structure.js?v=1.2.9';
-import { createRecovery } from './recovery.js?v=1.2.9';
+import { orderProof } from './gemini4.js?v=1.3.0';
+import { planInjection, REASONS, VERSION, normalizeSettings, getLinState } from './core.js?v=1.3.0';
+import { auditPreset, captureInjection, createHistory, planReasoning, requestKey, requestMeta, recordDiagnosis } from './diagnostics.js?v=1.3.0';
+import { installObserver } from './observer.js?v=1.3.0';
+import { analyzeOutput, structureDiagnosis, textDigest } from './structure.js?v=1.3.0';
+import { createRecovery } from './recovery.js?v=1.3.0';
 
 export function createController({ getContext, getSettings, onStatus = () => {}, networkTarget = globalThis, hasDraft = () => false }) {
     const ctx = getContext();
@@ -13,6 +13,7 @@ export function createController({ getContext, getSettings, onStatus = () => {},
     const ownedMessages = new WeakSet();
     const subscriptions = [];
     const requestRecords = new WeakMap();
+    const committedHandoffs = new WeakMap();
     const history = createHistory(() => getContext().accountStorage);
     const pending = [];
     const unassociated = record => record?.origin === 'unassociated' || record?.reason === 'unmatched-dispatch';
@@ -53,6 +54,9 @@ export function createController({ getContext, getSettings, onStatus = () => {},
             const settings = forcedContinue ? { ...getSettings(), enhanceContinue: true } : getSettings();
             if (request?.type === 'continue') manualContinue = false;
             const result = planInjection(request, settings, { preset, ownedMessages });
+            const prevHandoff = request && committedHandoffs.get(request);
+            if (prevHandoff && settings.enabled !== false && settings.requestMode === 'gemini4-story' &&
+                prevHandoff.key === requestKey(request) && prevHandoff.cap === request.max_tokens) return;
             const lin = getLinState(preset);
             let adjustment = result.applied ? planReasoning(request, settings) : null;
             // Preflight writes so a frozen object cannot be half-modified.
@@ -61,9 +65,14 @@ export function createController({ getContext, getSettings, onStatus = () => {},
                 return d ? d.writable === true : Object.isExtensible(request);
             };
             if (result.changed && !writable('messages')) throw new Error('immutable request');
+            let cap = result.handoff?.cap;
+            if (cap && !writable('max_tokens')) {
+                cap = null; result.handoff = {...result.handoff, cap:null}; result.note = '预算字段只读，保留原上限。';
+            }
             if (adjustment && !writable('reasoning_effort')) adjustment = null;
             // Finish all fallible planning/serialization before changing the host payload.
             const planned = result.changed || adjustment ? { ...request,
+                ...(cap ? {max_tokens:cap.after} : {}),
                 ...(result.changed ? { messages: result.messages } : {}),
                 ...(adjustment ? { reasoning_effort: adjustment.after } : {}) } : request;
             const key = requestKey(planned);
@@ -73,6 +82,7 @@ export function createController({ getContext, getSettings, onStatus = () => {},
                 id: prior?.id || id(), at: prior?.at || new Date().toISOString(), version: VERSION,
                 type: result.type, applied: result.applied, reason: result.reason,
                 requestMode: normalizeSettings(settings).requestMode,
+                ...(result.handoff ? {handoff:result.handoff} : {}),
                 ...(result.gemini4 ? { gemini4: result.gemini4 } : {}),
                 origin: 'assembled',
                 manualContinue: forcedContinue,
@@ -89,6 +99,9 @@ export function createController({ getContext, getSettings, onStatus = () => {},
                 request: requestMeta(planned), warnings: auditPreset(preset, planned, settings),
                 adjustment: adjustment || prior?.adjustment || null,
             };
+            if (result.handoff) report.warnings = report.warnings.map(w => w.startsWith('尾部含强制最大思考')
+                ? '原预设尾部要求最大思考；本次已从核实的 user 确认移除该段。其他条目和上游默认思考等级仍可影响用量。'
+                : w.startsWith('预设已含CoT交付与断点续传规则') ? '本次保留预设原有的 CoT 交付与断点规则，只让短确认跟随原 assistant 承接。' : w);
             if (result.identification === 'outgoing-exact-2.4') {
                 report.warnings = report.warnings.filter(x => !x.startsWith('未识别到 Lin 承接条目'));
                 report.warnings.push('本次通过实际待发的完整 Lin2.4 条目识别；设置读取不完整，无法完成全部预设自查。');
@@ -99,12 +112,14 @@ export function createController({ getContext, getSettings, onStatus = () => {},
                 request.messages = result.messages;
                 result.injected.forEach(m => ownedMessages.add(m));
             }
+            if (cap) request.max_tokens = cap.after;
+            if (result.handoff) committedHandoffs.set(request,{key,cap:request.max_tokens});
             if (adjustment) request.reasoning_effort = adjustment.after;
             last = report;
             if (!prior) response = null;
             history.put(report);
             requestRecords.set(request, report);
-            const item = { id: report.id, key, witness: result.orderWitness, source: result.gemini4?.source, injected: report.injected, type: result.type, model: report.request.model, at: Date.now() };
+            const item = { id: report.id, key, witness: result.orderWitness, source: result.gemini4?.source || report.request.source, injected: report.injected, type: result.type, model: report.request.model, at: Date.now() };
             const existing = pending.findIndex(x => x.id === report.id);
             if (existing >= 0) pending.splice(existing, 1);
             if (!report.dispatch) pending.push(item);
@@ -132,11 +147,23 @@ export function createController({ getContext, getSettings, onStatus = () => {},
             if (!candidate && exact.length === 0) {
                 const matches = recent.filter(x => {
                     const found = captureInjection(request.messages, x.injected);
-                    return x.type === (request.type || 'normal') && x.model === String(request.model || '')
+                    return !x.witness?.rules && (!x.source || x.source === request.chat_completion_source) && x.type === (request.type || 'normal') && x.model === String(request.model || '')
                         && x.injected.length && found.length === x.injected.length
                         && found.every((m, i) => m.role === x.injected[i].role && m.content === x.injected[i].content);
                 });
                 if (matches.length === 1) { candidate = matches[0]; correlation = 'injection-match'; }
+            }
+            if (!candidate && !exact.length) {
+                // A late-running companion may have added exactly ONE front system note.
+                // Match the full remaining envelope; a similar tail on its own is insufficient.
+                const ms = request.messages, index = ms.findIndex(m => m.role !== 'system') - 1;
+                const own = m => m?.role === 'system' && typeof m.content === 'string' &&
+                    m.content.startsWith('〔人性阴暗面/情绪/随机性放大·角色演出〕');
+                if (index >= 0 && own(ms[index]) && ms.filter(own).length === 1) {
+                    const k = requestKey({...request,messages:ms.filter((_,i) => i !== index)});
+                    const matches = recent.filter(x => x.key === k && x.source === request.chat_completion_source);
+                    if (matches.length === 1) {candidate = matches[0]; correlation = 'companion-front-note';}
+                }
             }
             if (!candidate) {
                 const related = recent.filter(x => x.type === (request.type || 'normal') && x.model === String(request.model || ''));
@@ -165,7 +192,8 @@ export function createController({ getContext, getSettings, onStatus = () => {},
             patch(candidate.id, { dispatch: {
                 at: new Date().toISOString(), correlation, injected, verified, tail, request: requestMeta(request),
                 ...(order ? { linOrder: order } : {}),
-                label: order === 'cue-before-user' ? '浏览器发送时已核对：Lin 原承接在 user 确认前；未使用原生回复前缀。'
+                label: candidate.witness?.rules && order === 'cue-before-user' ? '浏览器发送时已核对：原规则 → Lin 原 assistant 承接 → 最终短 user 确认；这是语义承接。'
+                    : order === 'cue-before-user' ? '浏览器发送时已核对：Lin 原承接在 user 确认前；未使用原生回复前缀。'
                     : order ? '浏览器发送时未确认 Lin 承接在 user 确认前。' : injected.length ? `已观察到发送；注入文本${tail ? '位于末尾' : '存在，但后方还有内容'}${injected.some(m => m.match === 'segment') ? '；完整提示被合并入同角色消息' : ''}${correlation === 'injection-match' ? '；其他内容在组装后发生变化' : ''}` : '已观察到发送；本次未注入',
             } });
             return candidate.id;
