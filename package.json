@@ -1,13 +1,17 @@
 {
   "name": "lin-prefill-guard",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "type": "module",
   "description": "SillyTavern request-time continuity cue with local diagnostics",
   "license": "MIT",
   "scripts": {
     "test": "node --test",
-    "check": "node --check index.js && node --check handoff.js && node --check gemini4.js && node --check core.js && node --check controller.js && node --check diagnostics.js && node --check observer.js && node --check delivery.js && node --check structure.js && node --check recovery.js"
+    "check": "node scripts/check.mjs",
+    "test:p0": "node --test test/v140-p0.test.js test/handoff.test.js test/gemini4.test.js",
+    "test:browser": "python3 scripts/browser-check.py",
+    "test:st": "python3 scripts/st-check.py",
+    "ab": "node scripts/ab.mjs"
   },
   "engines": {
     "node": ">=20"

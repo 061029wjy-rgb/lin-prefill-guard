@@ -1,0 +1,3 @@
+Reference converter SHA-256: eadc6ccd7961273c887c0986c2ed1ffe61e2e7da03f83afeb8ba4dc5a5041a13
+PASS actual ST converter, remove only owned system part: 12 cases; same contents, user confirmation and every original system part.
+PASS identical full 2.8.2 plans vs repository 1.3.0: 16 cases (including optional cap). No provider contacted.

@@ -1,7 +1,9 @@
-import { gemini4Target, lin282Layout } from './gemini4.js?v=1.3.0';
-import { DEFAULT_PREFILL, DEFAULT_NUDGE, SETTINGS_KEY, VERSION, REASONS, normalizeSettings, migrateSettings } from './core.js?v=1.3.0';
-import { createController } from './controller.js?v=1.3.0';
-import { formatRecord, recordStatus } from './diagnostics.js?v=1.3.0';
+import { family, detectedNonce, target290, layout290 } from './lin290.js?v=1.4.0';
+import { runLocalDemo } from './output-lab.js?v=1.4.0';
+import { gemini4Target, lin282Layout } from './gemini4.js?v=1.4.0';
+import { DEFAULT_PREFILL, DEFAULT_NUDGE, SETTINGS_KEY, VERSION, REASONS, normalizeSettings, migrateSettings } from './core.js?v=1.4.0';
+import { createController } from './controller.js?v=1.4.0';
+import { formatRecord, recordStatus } from './diagnostics.js?v=1.4.0';
 
 const INSTANCE_KEY = Symbol.for('lin-prefill-guard.instance');
 let controller;
@@ -24,6 +26,7 @@ function settings() {
 }
 function save(key, value) {
     settings()[key] = value;
+    if(['enabled','requestMode','compat290','shield','macro','macroSize','macroGroups','macroWhen','auxPosition','passiveOutput'].includes(key))controller?.resetExperiment();
     context().saveSettingsDebounced();
     updateStatus(controller?.snapshot());
 }
@@ -45,6 +48,7 @@ function updateStatus(view) {
     }
     const capBox = panel.querySelector('[data-setting="storyMoreTokens"]');
     if (capBox) capBox.disabled = state.requestMode !== 'gemini4-story';
+    const nonce=panel.querySelector('.lpg-nonce');if(nonce)nonce.textContent=detectedNonce(context().chatCompletionSettings||{})?'已检测到预设自带 nonce；酒馆照常展开。':'当前配置未检测到预设自带 nonce。';
     const last = lastView?.last;
     const badge = panel.querySelector('.lpg-badge');
     const outcome = last ? recordStatus(last) : { label: '等待请求', state: 'idle' };
@@ -53,8 +57,9 @@ function updateStatus(view) {
     const status = panel.querySelector('.lpg-status');
     const lines = [];
     if (state.enabled && state.requestMode === 'observe') lines.push('原样诊断：保留预设的原承接、CoT、角色权限和输出顺序；不追加插件提示或调整思考参数。');
-    if (state.enabled && state.requestMode === 'gemini4') lines.push('Gemini 4 兼容：只处理 Lin 2.8.2 的独立承接条目；不添加 user 催写，不更改生成预算。官方接口不接受自定义回复前缀。');
-    if (state.enabled && state.requestMode === 'gemini4-story') lines.push('Vertex 正文承接：仅重排核实过的 Lin 2.8.2 条目，让原承接紧贴简短确认；不修改预设文件。');
+    if (state.enabled && state.requestMode === 'gemini4') lines.push('Gemini 4 兼容：按版本核对 2.8.2 / 2.9.0；2.9.0 保留完整确认原文。');
+    if (state.enabled && ['gemini4-story','enhance'].includes(state.requestMode) && family(context().chatCompletionSettings||{})==='290')lines.push('已保留此前选择的模式；对 2.9.0 只核对原承接，不缩短最终确认，不调预算。');
+    else if(state.enabled && state.requestMode==='gemini4-story')lines.push('Vertex 正文承接：仅对 Lin 2.8.2 使用已核实的短确认规则。');
     if (!state.enabled) lines.push('扩展当前关闭，下次请求不注入。以下为最近记录。');
     if (last) {
         if (last.at) lines.push(`最近检查：${new Date(last.at).toLocaleTimeString()} · ${last.type || '未知类型'}`);
@@ -68,12 +73,13 @@ function updateStatus(view) {
         }
         if (last.note) lines.push(last.note);
     } else lines.push('选择 Lin 预设并正常发送一条消息后，这里会显示检查结果。');
-    if (lastView?.response) lines.push(lastView.response);
+    if(last?.experiment)lines.push(formatRecord(last));
+    if (lastView?.response && !last?.experiment) lines.push(lastView.response);
     if (lastView?.lastSkip) lines.push(`后台检查：${lastView.lastSkip.explanation}`);
     if (lastView?.storageWarning) lines.push(lastView.storageWarning);
     if (state.captureNetwork && lastView?.networkAvailable === false) lines.push('当前页面无法安装网络取证；仅记录请求事件，不能核对实际发送。');
     status.textContent = lines.join('\n');
-    panel.querySelector('.lpg-preview').textContent = last?.preview || '尚无本轮注入内容。';
+    panel.querySelector('.lpg-preview').textContent = controller?.getAuxPreview() || last?.preview || '尚无本轮独立辅助区。';
     renderHistory();
 }
 
@@ -173,6 +179,33 @@ function textarea(label, key, maxLength) {
     return row;
 }
 
+function experimentPanel(){
+    const box=element('details',{className:'lpg-advanced'});
+    box.append(element('summary',{},'Lin 2.9.0 兼容与请求实验'));
+    box.append(checkbox('启用 Lin 2.9.0 无损承接（独立于 2.8.2）','compat290'),
+        hint('原样诊断优先；要做对照请选承接兼容。默认只核对原顺序。实验名称“防路由”不代表能控制 Google 路由；辅助内容对模型可见。'),
+        select('Lin 防路由（实验）','shield',[['off','关闭'],['standard','标准：独立单行格式标识'],['deep','深度：独立结构化格式标识']]),
+        checkbox('新增随机宏（独立开关）','macro'),
+        select('每组样本号长度','macroSize',[['short','短 · 8 个十六进制字符'],['medium','中 · 16 个'],['long','长 · 24 个']]),
+        select('组数','macroGroups',[['1','1 组'],['2','2 组'],['3','3 组']]),
+        select('随机宏触发','macroWhen',[['each','普通回复、重生成、滑动'],['normal','仅普通回复']]),
+        select('独立辅助位置','auxPosition',[['boundary','系统前缀结束处（默认）'],['early','第一条系统消息／第一段系统内容之后']]),
+        element('p',{className:'lpg-hint lpg-nonce'}));
+    const revert=element('button',{type:'button',className:'menu_button lpg-button'},'关闭全部新实验');
+    revert.addEventListener('click',()=>{const s=settings();Object.assign(s,{shield:'off',macro:false,passiveOutput:false});
+        context().saveSettingsDebounced();controller.resetExperiment();box.querySelector('[data-setting=shield]').value='off';
+        for(const k of ['macro','passiveOutput'])box.querySelector('[data-setting='+k+']').checked=false;updateStatus(controller.snapshot());});
+    box.append(revert,checkbox('被动输出恢复：临时保留本轮完整返回的文本，供手动复制','passiveOutput'),
+        hint('不补写、清洗或回填聊天；工具/签名响应不当作正文。主动工具通道只可本地演示，真实渠道停用。'));
+    const copy=element('button',{type:'button',className:'menu_button lpg-button'},'复制本轮已返回文本');
+    const demo=element('button',{type:'button',className:'menu_button lpg-button'},'运行隔离工具演示（不联网）');
+    const msg=element('p',{className:'lpg-hint',role:'status'});
+    copy.addEventListener('click',async()=>{const text=controller.getVisibleOutput();if(!text){msg.textContent='没有可复制的完整返回文本。需在生成前开启被动恢复。';return;}
+        try{await copyText(text);msg.textContent='已复制实际返回文本；未修改聊天。';}catch{msg.textContent='未获得剪贴板权限。';}});
+    demo.addEventListener('click',()=>{try{msg.textContent='隔离工具回显：'+runLocalDemo()+'（只验证本地协议）';}catch{msg.textContent='隔离演示失败。';}});
+    box.append(copy,demo,msg);return box;
+}
+
 function mount() {
     if (panel?.isConnected) return;
     const host = document.querySelector('#extensions_settings2') || document.querySelector('#extensions_settings');
@@ -183,10 +216,11 @@ function mount() {
     heading.append(element('span', {}, 'Lin 预填充助手'), element('span', { className: 'lpg-badge' }, '等待请求'));
     panel.append(heading);
     const body = element('div', { className: 'lpg-body' });
-    body.append(hint(`v${VERSION} · Lin 2.8.2 · Gemini 4 Argon / Carbon / Hydrogen 承接兼容。`));
+    body.append(hint(`v${VERSION} · Lin 2.9.0 / 2.8.2 · Gemini 4 承接兼容；Neon 仅识别连接标识。`));
     body.append(checkbox('启用扩展', 'enabled'));
-    body.append(select('请求处理', 'requestMode', [['gemini4', 'Lin 2.8.2 × Gemini 4（承接兼容）'], ['gemini4-story', 'Vertex 正文承接（Lin 2.8.2）'], ['observe', '原样诊断（不改请求）'], ['enhance', '承接增强（旧版提示）']]));
-    body.append(hint('新安装默认开启承接兼容；升级保留原先选择。仅核对顺序选「承接兼容」；在直接 Vertex 上让原承接紧贴短确认，选「Vertex 正文承接」。正常顺序不改；只有误放在末尾且能唯一核实的 Lin 承接才会被移回。'));
+    body.append(select('请求处理', 'requestMode', [['gemini4', 'Lin 2.9.0 / 2.8.2 × Gemini 4（承接兼容）'], ['gemini4-story', 'Vertex 正文承接（Lin 2.8.2）'], ['observe', '原样诊断（不改请求）'], ['enhance', '承接增强（旧版提示）']]));
+    body.append(hint('新安装默认开启承接兼容；升级保留原先选择。Lin 2.9.0 请选「承接兼容」，完整保留原确认。仅 Lin 2.8.2 的直接 Vertex 连接可选「Vertex 正文承接」使用短确认。正常顺序不改；只有误放在末尾且能唯一核实的 Lin 承接才会被移回。'));
+    body.append(experimentPanel());
     body.append(checkbox('正文承接时，如原上限恰为 16,384，放宽到 32,768（可能增加用时和费用）', 'storyMoreTokens'));
     body.append(hint('Vertex 正文承接保留原栏目和正文要求，移除末尾强制最大思考的一段；不强设思考等级或 CoT 字数。放宽上限为可选项。'));
     body.append(select('适用范围', 'scope', [['lin', '仅已识别且启用的 Lin 承接条目'], ['all', '所有 Chat Completion 预设']]));
@@ -221,6 +255,8 @@ function mount() {
         if (['gemini4','gemini4-story'].includes(normalizeSettings(settings()).requestMode)) {
             const ctx = context(), preset = ctx.chatCompletionSettings || {};
             const target = gemini4Target({ chat_completion_source: preset.chat_completion_source, model: ctx.getChatCompletionModel?.(preset), reverse_proxy: preset.reverse_proxy });
+            if(family(preset)!=='legacy'){const l=layout290(preset), t=target290({chat_completion_source:preset.chat_completion_source,model:ctx.getChatCompletionModel?.(preset)});
+                selfResult.textContent=(!l.reason&&t)?'已核对 Lin 2.9.0 配置与 '+t.model+' 连接标识；承接原文与出站结构需实际发送核验。':(REASONS[l.reason||'g4-other']||'无法确认配置。');return;}
             const layout = lin282Layout(preset);
             selfResult.textContent = !target ? REASONS['g4-other'] : layout.reason ? REASONS[layout.reason]
                 : '已识别 Lin 2.8.2 与 ' + target.model + (target.indirect ? '（按别名识别）' : '') + '。这里只核对配置；发送后才能核对两条消息的位置，不代表原生前缀已生效。';

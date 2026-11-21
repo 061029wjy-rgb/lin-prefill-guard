@@ -1,9 +1,10 @@
 /** Pure request planning. This module never sends requests or changes chat history. */
-import { deliveryProfile, deliveryCue } from './delivery.js?v=1.3.0';
-export const VERSION = '1.3.0';
+import { deliveryProfile, deliveryCue } from './delivery.js?v=1.4.0';
+import { family, compat290 } from './lin290.js?v=1.4.0';
+export const VERSION = '1.4.0';
 export const SETTINGS_KEY = 'lin_prefill_guard_v1';
-import { LIN_PROMPT_ID, planGemini4 } from './gemini4.js?v=1.3.0';
-import { planStoryHandoff } from './handoff.js?v=1.3.0';
+import { LIN_PROMPT_ID, planGemini4 } from './gemini4.js?v=1.4.0';
+import { planStoryHandoff } from './handoff.js?v=1.4.0';
 export { LIN_PROMPT_ID };
 export const DEFAULT_PREFILL = '已定位本轮任务：以聊天记录中真实用户的最新请求为准。续写承接最后有效正文，修订处理指定范围，戏外问题直接回答。沿用已启用的视角、角色控制和输出格式；下一条回复交付所需结果，不重演已完成的情节，不以接收确认或写作计划代替结果。';
 export const REGENERATE_PREFILL = '已定位本轮任务：重新回答聊天记录中真实用户的最新请求。以该请求之前的有效剧情为起点；被替换或未选中的回复不作为已发生剧情，不从其结尾续写。沿用已启用的视角、角色控制和输出格式，交付本轮完整的新回答。';
@@ -14,6 +15,7 @@ export const CONTINUE_PREFILL = '本次任务是补全当前回复，已有文�
 export const DEFAULTS = Object.freeze({
     enabled: true,
     requestMode: 'gemini4',
+    compat290: true, shield: 'off', macro: false, macroSize: 'short', macroGroups: '1', macroWhen: 'each', auxPosition: 'boundary', passiveOutput: false,
     storyMoreTokens: false,
     scope: 'lin',
     mode: 'user',
@@ -26,8 +28,16 @@ export const DEFAULTS = Object.freeze({
 });
 
 export const REASONS = Object.freeze({
+    '290-ready': '已唯一核对当前两条 Lin 2.9.0 原文与末尾顺序；确认原文完整。',
+    '290-restored': '仅移动独立的原 assistant 承接；末尾 user 确认完整保留。',
+    '290-layout': '无法核对当前顺序组、条目或独立尾部；保留请求。',
+    '290-unknown': '当前版本或版本标识不一致；禁用旧版替换，原样发送。',
+    '290-shape': '该结构未验证为独立的纯文本生成请求。',
+    '290-host-search': '网页搜索已启用；酒馆的 Google 后端会加入搜索工具，已保留原请求、跳过本轮实验。',
+    '290-special': '含工具、签名、多模态或其他特殊消息结构，原样发送。',
+    '290-postprocess': '自定义渠道会再次改造请求，跳过实验。',
     'g4-handoff': '已核对 Lin 原条目，规则移至原 assistant 承接前，末尾为短 user 确认；本次请求取消了强制最大思考。',
-    'g4-other': '此模式仅适配 Gemini 4 Argon / Carbon / Hydrogen 的 AI Studio、Vertex 或自定义聊天连接；本次请求保持原样。',
+    'g4-other': '该型号或连接未适配；按请求标识识别，不能验证后端型号。',
     'g4-not-lin282': '未确认 Lin 2.8.2 的承接与尾部确认条目；本次保持原样。',
     'g4-disabled': 'Lin 承接或尾部确认未启用，未移动消息。',
     'g4-uncertain': '无法唯一核对 Lin 独立承接与确认的位置（可能已合并、重复或被编辑），未移动或补写任何消息。',
@@ -67,6 +77,11 @@ export function normalizeSettings(value = {}) {
         enabled: typeof input.enabled === 'boolean' ? input.enabled : DEFAULTS.enabled,
         requestMode: ['observe', 'enhance', 'gemini4', 'gemini4-story'].includes(input.requestMode) ? input.requestMode
             : Object.keys(input).length ? 'observe' : DEFAULTS.requestMode,
+        compat290: input.compat290 !== false, shield: ['standard','deep'].includes(input.shield)? input.shield:'off',
+        macro: input.macro===true, macroSize:['short','medium','long'].includes(input.macroSize)?input.macroSize:'short',
+        macroGroups:['1','2','3'].includes(String(input.macroGroups))?String(input.macroGroups):'1',
+        macroWhen:input.macroWhen==='normal'?'normal':'each', auxPosition:input.auxPosition==='early'?'early':'boundary',
+        passiveOutput:input.passiveOutput===true,
         storyMoreTokens: input.storyMoreTokens === true,
         scope: input.scope === 'all' ? 'all' : 'lin',
         mode: input.mode === 'pair' ? 'pair' : 'user',
@@ -151,6 +166,7 @@ export function planInjection(request, rawSettings = {}, { preset = {}, ownedMes
     const type = typeof request?.type === 'string' ? (request.type.trim().toLowerCase() || 'normal') : 'normal';
     const skip = reason => ({ applied: false, changed: false, reason, type });
     if (!settings.enabled) return skip('disabled');
+    if (family(preset) !== 'legacy') return compat290(request||{}, preset, settings);
     if (!request || !Array.isArray(request.messages)
         || request.messages.some(m => !m || typeof m !== 'object' || typeof m.role !== 'string')) return skip('bad-payload');
     if (type === 'quiet') return skip('quiet');

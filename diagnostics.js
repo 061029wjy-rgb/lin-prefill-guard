@@ -1,7 +1,9 @@
-import { isGemini4Segment } from './gemini4.js?v=1.3.0';
-import { getLinState, normalizeSettings, plainText, VERSION } from './core.js?v=1.3.0';
-import { deliveryProfile } from './delivery.js?v=1.3.0';
-import { structureDiagnosis, endingDiagnosis, replySignalDiagnosis } from './structure.js?v=1.3.0';
+import { family } from './lin290.js?v=1.4.0';
+import { label290 } from './coordinator.js?v=1.4.0';
+import { isGemini4Segment } from './gemini4.js?v=1.4.0';
+import { getLinState, normalizeSettings, plainText, VERSION } from './core.js?v=1.4.0';
+import { deliveryProfile } from './delivery.js?v=1.4.0';
+import { structureDiagnosis, endingDiagnosis, replySignalDiagnosis } from './structure.js?v=1.4.0';
 
 export const HISTORY_KEY = 'lin_prefill_guard_history_v2';
 export const HISTORY_LIMIT = 50;
@@ -113,7 +115,7 @@ export function auditPreset(preset = {}, request = {}, settings = {}) {
     if (size > 20000) notes.push(`输入侧固定提示约 ${size} 字符（不含世界书与聊天），这是发送给模型的提示词长度，不是模型输出或正文长度。`);
     if (active.some(p => /绝对不可以直接输出正文|必须进行最大程度的思考/.test(p.content || ''))) notes.push('尾部含强制最大思考要求；可与高思考参数叠加，且文字提示不能保证给正文预留 token。');
     if (active.some(p => /【Lin_CoT模式与交付】/.test(p.content || '') && /【断点续传】/.test(p.content || ''))) {
-        notes.push(normalizeSettings(settings).requestMode === 'enhance'
+        notes.push(normalizeSettings(settings).requestMode === 'enhance' && family(preset)==='legacy'
             ? '预设已含CoT交付与断点续传规则；当前增强模式仍会替换原承接条目并追加提示，存在重复干预。可切换原样诊断保留预设原顺序与原文。'
             : '预设已含CoT交付与断点续传规则，当前模式不另加交付提示。预设中的“续传”文字不等于服务商的解码凭据。');
     }
@@ -317,6 +319,23 @@ export function compareDelivery(record = {}) {
 }
 
 export function formatRecord(record, records = []) {
+    if(record?.experiment){
+        const e=record.experiment,w=record.wire||{},lines=[
+            'Lin 2.9 请求记录 · '+record.version+' · '+(record.at||''),
+            '请求：'+record.type+' / '+record.request?.model+' / '+record.request?.source+'（连接标签）',
+            '组装：'+(record.explanation||'')+'；顺序组 '+(e.groups?.join(' / ')||'未核对'),
+            '实验：护盾 '+({off:'关闭',standard:'标准',deep:'深度'}[e.shield]||'关闭')+'；新增随机宏 '+(e.macro?'开':'关')+'；原预设 nonce '+(e.nonce?'已检测到':'未检测到'),
+            '执行：'+label290(e.status)+'；P0 移动原承接：'+(e.repair?'是':'否'),
+            '已规划：'+(e.planned?'是':'否')+'；已提交改动：'+(e.committed?'是':'否')+'；浏览器生成 fetch：'+(e.browserSent?'已调用':'未核对')+'；HTTP 回执：'+(e.httpReceipt?'有':'无')+'；上游路由：无确认',
+            '辅助位置：'+(e.location||'无')+'；新增辅助文本 '+(e.addedChars||0)+' 字符；请求净增 '+(e.addedBytes||0)+' 字节；没有用字符或字节估算 token。',
+            '泄漏：'+(w.anchorEcho===true?'检测到模型照抄完整辅助标识；可关闭实验，原回复未清洗。':w.anchorEcho===false?'未检测到完整标识':'无可用证据'),
+        ];
+        if(record.wire)lines.push(responseDiagnosis(w,record.request),'HTTP '+(w.httpStatus??'未知')+'；结束 '+(w.finishReason||'未知')+(w.doneWithoutReason?'（有 DONE，缺结束原因）':'')+'；可见文本字段 '+(w.visibleChars??'未知')+' 字符',
+            '渠道输入 token：'+(w.promptTokens??'未知')+'；缓存读取 token：'+(w.cacheReadTokens??'未知')+'；缓存收益需同条件对照。');
+        if(record.rendered)lines.push('酒馆保存原文 '+record.rendered.chars+' 字符；不能证明文学质量。');
+        if(record.note)lines.push(record.note);
+        lines.push('只核对浏览器与酒馆之间的请求，不能证明服务商如何分配模型。');return lines.join('\n');
+    }
     if (!record) return '尚无记录。正常发送一条消息后可在这里查询。';
     const lines = [`记录 ${record.id} · v${record.version || VERSION}`, `时间：${record.at}`, `类型：${record.type} · 模型：${record.request?.model || '未提供'}`, `组装：${record.explanation}`, `发送：${record.dispatch?.label || '未观察到浏览器发送，或未开启网络取证'}`];
     const source = record.dispatch?.request?.source || record.request?.source;

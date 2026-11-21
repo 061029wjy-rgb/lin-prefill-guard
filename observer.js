@@ -1,8 +1,9 @@
 /** Read-only observation of ST's single chat endpoint. Never retries or rewrites a response. */
-import { analyzeOutput, textDigest } from './structure.js?v=1.3.0';
+import { analyzeOutput, textDigest } from './structure.js?v=1.4.0';
+import { observeConsumed } from './wire-response.js?v=1.4.0';
 const textBuffers = new WeakMap();
 const textValue = value => typeof value === 'string' ? value : Array.isArray(value)
-    ? value.filter(p => !p?.thought && p?.type !== 'thinking').map(p => typeof p?.text === 'string' ? p.text : '').join('') : '';
+    ? value.filter(p => p && !p.thought && (p.type==null||p.type==='text'||p.type==='output_text')).map(p => typeof p?.text === 'string' ? p.text : '').join('') : '';
 function observeText(stats, value, snapshot = false) {
     const text = textValue(value);
     const previous = textBuffers.get(stats) || '';
@@ -30,7 +31,8 @@ export function addResponseData(stats, data) {
         if (Number.isInteger(status) && status >= 400 && status <= 599) stats.apiStatus = status;
     }
     if (data.promptFeedback?.blockReason) { stats.recognized = true; stats.blockReason = safeCode(data.promptFeedback.blockReason); }
-    const candidate = data.candidates?.[0];
+    if (data.candidates?.length>1 || data.choices?.length>1) stats.multipleCandidates=true;
+    const candidate = data.candidates?.find(c=>(c.index??0)===0);
     if (candidate) {
         stats.recognized = true;
         for (const p of candidate.content?.parts || []) {
@@ -50,7 +52,7 @@ export function addResponseData(stats, data) {
         if (!choice.delta && choice.message) stats.messageEnvelopes = (stats.messageEnvelopes || 0) + 1;
         if (message.content !== undefined || choice.text !== undefined) observeText(stats, message.content ?? choice.text, !choice.delta && !!choice.message);
         stats.reasoningChars += chars(message.reasoning_content ?? message.reasoning);
-        if (message.refusal) stats.refusal = true;
+        if (message.refusal || Array.isArray(message.content)&&message.content.some(x=>x?.type==='refusal')) stats.refusal = true;
         if (message.tool_calls?.length || message.function_call) stats.toolCalls = true;
         if (choice.finish_reason) stats.finishReason = safeCode(choice.finish_reason);
     }
@@ -91,10 +93,12 @@ export function addResponseData(stats, data) {
     if (typeof output === 'number') stats.outputTokens = output;
     if (typeof prompt === 'number') stats.promptTokens = prompt;
     if (typeof total === 'number') stats.totalTokens = total;
+    const cached=usage?.cachedContentTokenCount??usage?.prompt_tokens_details?.cached_tokens;
+    if(Number.isFinite(cached))stats.cacheReadTokens=cached;
 }
 
 export async function inspectResponse(response, { maxBytes = MAX_BYTES, timeoutMs = MAX_MS, expectedStream, signal,
-    register = () => () => {} } = {}) {
+    register = () => () => {}, onVisible, needle = '' } = {}) {
     const started = Date.now();
     const rawType = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
     // Store only a MIME type, never arbitrary headers, text, URLs, or error messages.
@@ -182,10 +186,14 @@ export async function inspectResponse(response, { maxBytes = MAX_BYTES, timeoutM
         // Snapshot at the end of reading; unrelated host cleanup during the
         // asynchronous digest must not relabel an already completed response.
         if (signal?.aborted) stats.aborted = true;
-        stats.output = analyzeOutput(textBuffers.get(stats) || '');
+        const visible=textBuffers.get(stats)||'';
+        stats.output = analyzeOutput(visible);
+        if(needle)stats.anchorEcho=visible.includes(needle);
+        if(onVisible)onVisible(visible);
         stats.textDigest = await textDigest(textBuffers.get(stats) || '');
         textBuffers.delete(stats);
     }
+    if(stats.transport==='sse' && stats.doneMarker && !stats.finishReason)stats.doneWithoutReason=true;
     if (expectedStream === true && ['json', 'ndjson'].includes(stats.transport)) stats.protocolMismatch = 'stream-request-non-sse';
     if (expectedStream === false && stats.transport === 'sse') stats.protocolMismatch = 'json-request-sse';
     if (stats.transport === 'sse' && stats.messageEnvelopes) stats.streamMessageEnvelope = true;
@@ -194,7 +202,7 @@ export async function inspectResponse(response, { maxBytes = MAX_BYTES, timeoutM
     return stats;
 }
 
-export function installObserver({ target = globalThis, enabled, onDispatch, onResponse, onError }) {
+export function installObserver({ target = globalThis, enabled, onDispatch, onResponse, onError, coordinator, onVisible }) {
     const original = target.fetch;
     let active = true;
     const readers = new Set();
@@ -226,8 +234,10 @@ export function installObserver({ target = globalThis, enabled, onDispatch, onRe
         finally { clearTimeout(timer); readers.delete(cancel); reader.releaseLock(); }
     }
     async function wrapped(input, init) {
+        if(!active)return original.apply(this,arguments);
         let id;
         let dispatch;
+        let managed=null, sendInit=init;
         let expectedStream;
         const signal = init?.signal || input?.signal;
         function observeRequest(body) {
@@ -235,29 +245,64 @@ export function installObserver({ target = globalThis, enabled, onDispatch, onRe
                 const request = body === null ? null : JSON.parse(body);
                 if (request && active) {
                     expectedStream = typeof request.stream === 'boolean' ? request.stream : undefined;
-                    id = onDispatch(request);
+                    managed=coordinator?.before(request,body) || null;
+                    if(managed){
+                        id=managed.id;
+                        if(typeof managed.body==='string' && init){sendInit=Object.create(init);Object.defineProperty(sendInit,'body',{value:managed.body,enumerable:true});}
+                    } else id = onDispatch(request);
                 }
             } catch { /* Unsupported request shapes pass through unchanged. */ }
         }
         try {
             const base = target.location?.href || 'http://localhost/';
             const url = new URL(typeof input === 'string' || input instanceof URL ? String(input) : input.url, base);
-            if (active && enabled() && url.origin === new URL(base).origin && url.pathname === ENDPOINT
+            if (active && enabled() && url.origin === new URL(base).origin && url.pathname === ENDPOINT && !url.search && !url.hash && !url.username && !url.password
                 && String(init?.method || input?.method || 'GET').toUpperCase() === 'POST') {
                 // Request objects are used by some host branches. Clone only for
                 // read-only inspection; never consume or replace their body.
-                if (typeof init?.body === 'string') observeRequest(init.body);
+                if (typeof init?.body === 'string' && init.body.length<=4*1024*1024) observeRequest(init.body);
+                else if(coordinator?.belongs()){managed={managed:true};coordinator.unavailable(typeof init?.body==='string'?'too-large':'request-object');}
                 else if (init?.body === undefined && typeof input?.clone === 'function')
                     dispatch = requestBody(input).then(observeRequest);
             }
         } catch { /* Unsupported request shapes pass through unchanged. */ }
         let response;
         const sent = Date.now();
-        try { response = await original.call(this, input, init); }
+        try {
+            const actual=original.call(this,input,sendInit);
+            try{managed?.sent?.();}catch{}
+            response=await actual;
+        }
         catch (error) {
-            const report = () => { if (id && active) { try { onError(id, { aborted: error?.name === 'AbortError', networkError: error?.name !== 'AbortError' }); } catch { /* isolated */ } } };
+            const report = () => { if (id && active && (!managed || managed.valid?.())) { try { onError(id, { aborted: error?.name === 'AbortError', networkError: error?.name !== 'AbortError' }); } catch { /* isolated */ } } };
             if (dispatch) track(dispatch.then(report)); else report();
             throw error;
+        }
+        if(managed){
+            try {
+                if(!managed.valid?.())return response;
+                managed.receipt?.();
+                if(!managed.capture||!active||!response.body){
+                    if(managed.capture&&id&&active)onResponse(id,{httpStatus:response.status,responseComplete:true,receivedBytes:0,visibleChars:0});
+                    return response;
+                }
+                const status=response.status;
+                return observeConsumed(response,{live:()=>active&&managed.valid(),failed:stats=>onError(id,{httpStatus:status,...stats}),
+                    finish(chunks,timing){
+                        const headers={};for(const k of ['content-type','retry-after']){const v=response.headers.get(k);if(v)headers[k]=v;}
+                        const copy=new Response(new Blob(chunks),{status,headers});
+                        let recovered='';
+                        track(inspectResponse(copy,{expectedStream,signal,needle:managed.needle,
+                          onVisible:managed.passive? s=>{recovered=s;}:undefined}).then(stats=>{
+                            if(!active||!managed.valid())return;
+                            if(managed.passive && status>=200&&status<300 && stats.recognized && !stats.apiError && !stats.blockReason && !stats.refusal &&
+                                !stats.multipleCandidates && !stats.toolCalls && !stats.aborted && !stats.captureLimited && !stats.parseErrors &&
+                                !stats.protocolMismatch && !stats.incomplete && /^(stop|end_turn|stop_sequence)$/i.test(stats.finishReason||'') && recovered)
+                                onVisible?.(id,recovered);
+                            onResponse(id,{...stats,...timing,totalDurationMs:Date.now()-sent});
+                        }).catch(()=>{if(active&&managed.valid())onError(id,{httpStatus:status,captureLimited:true});}));
+                    }});
+            } catch {return response;}
         }
         if ((id || dispatch) && active) {
             try {

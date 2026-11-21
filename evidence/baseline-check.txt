@@ -1,0 +1,5 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> lin-prefill-guard@1.3.0 check
+> node --check index.js && node --check handoff.js && node --check gemini4.js && node --check core.js && node --check controller.js && node --check diagnostics.js && node --check observer.js && node --check delivery.js && node --check structure.js && node --check recovery.js
+

@@ -1,0 +1,57 @@
+{
+  "reference": "lin2.9.0-测试.json",
+  "presetName": "lin2.9.0-Vertex-Neon",
+  "originalFileBytes": 1103014,
+  "frozenSha256Before": "bd5bb31893f8835a6d064b7be6fd03e6b5ad7f001cc8a75334486a47d1882766",
+  "sha256After": "bd5bb31893f8835a6d064b7be6fd03e6b5ad7f001cc8a75334486a47d1882766",
+  "fileIdentical": true,
+  "components": [
+    {
+      "path": "prompts",
+      "count": 93,
+      "sha256": "2d712af0aecb5147a24a03d965d8f788b9db6ef046d4c4ea3d7189adcad6ac4d"
+    },
+    {
+      "path": "extensions.regex_scripts",
+      "count": 19,
+      "sha256": "780a444f86d05ded2910255f86eb31a76f24c527014a93135c0705ab26872dd5"
+    },
+    {
+      "path": "prompt_order",
+      "count": 2,
+      "sha256": "4ec3d9691d3c582d962d17882f480993c93397669a1890848698e54ac09a8ebd"
+    }
+  ],
+  "orders": [
+    {
+      "character_id": 100000,
+      "entries": 92,
+      "enabled": 56,
+      "sha256": "500625f86fa78e7a88fa08da7166c063df815198143c9750f664dfc826a45e92"
+    },
+    {
+      "character_id": 100001,
+      "entries": 93,
+      "enabled": 61,
+      "sha256": "403fda61c4d3a68cb0fc2b2f18b9aff7d34c945ee9b70474f121b953b29fadea"
+    }
+  ],
+  "anchors": [
+    {
+      "identifier": "e898d676-f02e-4868-bc51-33761e294df6",
+      "role": "assistant",
+      "unicodeCodePoints": 271,
+      "javascriptUtf16CodeUnits": 271,
+      "textSha256": "4796bb9bf65d1a06e1ccca2cf01f31af84a820c6bf9b7183c375749cc373ee74"
+    },
+    {
+      "identifier": "68186c40-6f11-4c47-a036-58497d1d6795",
+      "role": "user",
+      "unicodeCodePoints": 1258,
+      "javascriptUtf16CodeUnits": 1260,
+      "textSha256": "501109b009ad78a82710c38a6c227b361d68ac5b9dabbada5d227a2d743031b9"
+    }
+  ],
+  "componentSerialization": "UTF-8 JSON, sorted object keys; array order preserved; compact separators; non-ASCII unescaped. Section hashes are computed from the final file whose full SHA-256 matched the frozen initial SHA-256.",
+  "lin282RegressionFileSha256": "a877d85ae1a26a13cf287f2158413095986b1f123f3403b86226d220afb01f7d"
+}

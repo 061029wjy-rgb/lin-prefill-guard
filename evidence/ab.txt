@@ -1,0 +1,5 @@
+12 fixed cases × 6 modes = 72 local plain-text packets (web search explicitly off for all six groups); no network request. requests.json contains your expanded preset; keep it private.
+{
+  "observed": 0,
+  "groups": []
+}

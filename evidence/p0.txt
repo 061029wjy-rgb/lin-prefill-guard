@@ -1,0 +1,38 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> lin-prefill-guard@1.4.0 test:p0
+> node --test test/v140-p0.test.js test/handoff.test.js test/gemini4.test.js
+
+✔ gemini-4-argon normal: restore one misplaced preset object without altering its contents or any other message (5.026169ms)
+✔ gemini-4-argon swipe: restore one misplaced preset object without altering its contents or any other message (0.550239ms)
+✔ gemini-4-argon regenerate: restore one misplaced preset object without altering its contents or any other message (0.536218ms)
+✔ gemini-4-carbon normal: restore one misplaced preset object without altering its contents or any other message (0.381646ms)
+✔ gemini-4-carbon swipe: restore one misplaced preset object without altering its contents or any other message (0.608307ms)
+✔ gemini-4-carbon regenerate: restore one misplaced preset object without altering its contents or any other message (0.565924ms)
+✔ two anchors only are sufficient when optional parts are absent; plain text blocks retain their byte content (0.467495ms)
+✔ an empty trailing placeholder is not a valid user turn; preserve it and all existing object identities (0.322246ms)
+✔ matches only the two specified models and connection types; channel aliases do not certify the backend (3.28254ms)
+✔ protected jobs, other versions, disabled prompts, missing anchors and ambiguous matches are unchanged (1.239009ms)
+✔ new installations select the targeted adapter; old modes remain explicit choices (0.532233ms)
+✔ controller serializes the repaired order exactly once; verifies the actual browser dispatch without storing cue or chat (23.995864ms)
+✔ provider continuation is distinct from a stop or a restriction; no raw token is stored and the local recovery action sends no request (5.264388ms)
+✔ gemini-4-carbon keeps Lin rules and real story, with assistant directly before final confirmation (4.753588ms)
+✔ gemini-4-hydrogen keeps Lin rules and real story, with assistant directly before final confirmation (0.635609ms)
+✔ gemini-4-argon keeps Lin rules and real story, with assistant directly before final confirmation (0.655529ms)
+✔ observe, normal compatibility, host-only fields, non-chat, tools and ambiguous anchors never enter the new path (5.032408ms)
+✔ host single-text block is preserved; edited or missing maximization paragraph is not removed (0.378571ms)
+✔ separate Google usage counts sum to cap; inclusive or conflicting formats never double count (0.878765ms)
+✔ live controller commits once and verifies both listener orders at the fetch boundary without altering the host response (25.19943ms)
+✔ 2.9: both order groups; runtime roles; enabled empty placeholder creates nothing (3.609083ms)
+✔ 2.9: a unique transposed tail moves only the original cue; no old replacement/cap even in enhance (3.092283ms)
+✔ 2.9: protected protocols, ambiguous anchor, quiet/continue and edited wire skip losslessly (3.521641ms)
+✔ 2.9: target labels and protocol are checked separately; Neon not claimed verified (0.453184ms)
+✔ user-supplied 2.9 reference: bytes/hash and both actual groups; preserve expanded messages (47.60091ms)
+ℹ tests 25
+ℹ suites 0
+ℹ pass 25
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 212.96411
