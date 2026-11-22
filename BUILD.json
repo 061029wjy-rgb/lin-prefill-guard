@@ -1,0 +1,17 @@
+{
+  "extension": "Lin 预填充助手",
+  "version": "1.4.1",
+  "build": "LPG-1.4.1.1",
+  "releaseDate": "2026-11-22",
+  "sourceCommit": "a179bd7d5276be9d476e7556c98e35fa5e19334d",
+  "gitTree": "fea8888f47ef2baf78be177b3b632763b0e07f16",
+  "baseVersion": "1.4.0",
+  "baseCommit": "06ba69b5dfb1d9a5877940d051778636a5f75b46",
+  "publicBaseline": "475c555bca1831c402554b1262c762ce85911096",
+  "sourceBundle": {
+    "file": "provenance/source-1.4.1.bundle",
+    "requiresCommit": "475c555bca1831c402554b1262c762ce85911096",
+    "sha256": "1f4310b4925dca7c7c4917c29cb168917a423139af8cae578725339240a28b79"
+  },
+  "validation": "docs/VALIDATION-1.4.1.md"
+}

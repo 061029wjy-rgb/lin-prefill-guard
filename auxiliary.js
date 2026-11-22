@@ -1,5 +1,5 @@
 // Owned input experiment. No macros execute on source text. A request sample is not a credential.
-import {systemKey} from './lin290.js?v=1.4.0';
+import {systemKey} from './lin290.js?v=1.4.1';
 const encoder=new TextEncoder();
 const size={short:8,medium:16,long:24};
 const hex=b=>Array.from(b,n=>n.toString(16).padStart(2,'0')).join('');

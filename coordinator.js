@@ -1,6 +1,6 @@
-import { compat290, detectedNonce, family, protocol290, target290, wireKind, systemKey } from './lin290.js?v=1.4.0';
-import { drawSample, encodeWire, project } from './auxiliary.js?v=1.4.0';
-import { normalizeSettings, VERSION, REASONS } from './core.js?v=1.4.0';
+import { compat290, detectedNonce, family, protocol290, target290, wireKind, systemKey } from './lin290.js?v=1.4.1';
+import { drawSample, encodeWire, project } from './auxiliary.js?v=1.4.1';
+import { normalizeSettings, VERSION, REASONS } from './core.js?v=1.4.1';
 const now=()=>Date.now(), exp=new TextEncoder();
 const WIRE_LIMIT=4*1024*1024;
 const reasons={

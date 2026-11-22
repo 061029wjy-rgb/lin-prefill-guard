@@ -1,9 +1,9 @@
-import { family } from './lin290.js?v=1.4.0';
-import { label290 } from './coordinator.js?v=1.4.0';
-import { isGemini4Segment } from './gemini4.js?v=1.4.0';
-import { getLinState, normalizeSettings, plainText, VERSION } from './core.js?v=1.4.0';
-import { deliveryProfile } from './delivery.js?v=1.4.0';
-import { structureDiagnosis, endingDiagnosis, replySignalDiagnosis } from './structure.js?v=1.4.0';
+import { family } from './lin290.js?v=1.4.1';
+import { label290 } from './coordinator.js?v=1.4.1';
+import { isGemini4Segment } from './gemini4.js?v=1.4.1';
+import { getLinState, normalizeSettings, plainText, VERSION } from './core.js?v=1.4.1';
+import { deliveryProfile } from './delivery.js?v=1.4.1';
+import { structureDiagnosis, endingDiagnosis, replySignalDiagnosis } from './structure.js?v=1.4.1';
 
 export const HISTORY_KEY = 'lin_prefill_guard_history_v2';
 export const HISTORY_LIMIT = 50;

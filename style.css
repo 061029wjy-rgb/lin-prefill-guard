@@ -1,70 +1,101 @@
+/* Scoped so previews, buttons and disclosures in other extensions keep the host theme. */
 #lin-prefill-guard-panel {
-  --lpg-accent: #77bfa1;
-  border: 1px solid color-mix(in srgb, var(--lpg-accent) 45%, transparent);
-  border-radius: 12px;
-  margin: 10px 0;
-  overflow: hidden;
-  color: var(--SmartThemeBodyColor, inherit);
-  background: var(--SmartThemeBlurTintColor, transparent);
-  font-family: inherit;
+  --lpg-ink:var(--SmartThemeBodyColor,#e8e9e6);
+  --lpg-line:color-mix(in srgb,var(--lpg-ink) 22%,transparent);
+  --lpg-tint:color-mix(in srgb,var(--lpg-ink) 6%,transparent);
+  --lpg-soft:color-mix(in srgb,var(--lpg-ink) 82%,transparent);
+  --lpg-accent:#71bda8;
+  --lpg-wash:color-mix(in srgb,var(--lpg-accent) 14%,transparent);
+  box-sizing:border-box; width:100%; min-width:0; max-width:100%; margin:8px 0;
+  color:var(--lpg-ink); background:var(--SmartThemeBlurTintColor,transparent);
+  border:1px solid var(--lpg-line);border-radius:12px;
+  font:inherit; text-align:start; overflow-wrap:anywhere;
 }
-#lin-prefill-guard-panel .lpg-heading {
-  padding: 13px 14px;
-  cursor: pointer;
-  font-weight: 600;
-  line-height: 1.5;
+#lin-prefill-guard-panel *,#lin-prefill-guard-panel *::before,#lin-prefill-guard-panel *::after {box-sizing:border-box;}
+#lin-prefill-guard-panel [hidden] {display:none !important;}
+#lin-prefill-guard-panel .lpg-heading {cursor:pointer;padding:12px 12px 8px;display:flex;align-items:center;gap:8px;min-height:48px;list-style:none;}
+#lin-prefill-guard-panel summary::-webkit-details-marker {display:none;}
+#lin-prefill-guard-panel .lpg-heading::before,#lin-prefill-guard-panel .lpg-advanced > summary::before,#lin-prefill-guard-panel .lpg-helpbox > summary::before {
+  content:''; display:inline-block; width:7px;height:7px;flex:none;border-inline-end:2px solid currentColor;border-block-end:2px solid currentColor;
+  transform:rotate(-45deg); margin-right:3px;
 }
-#lin-prefill-guard-panel .lpg-badge {
-  display: inline-block;
-  margin-left: 8px;
-  padding: 1px 8px;
-  border-radius: 12px;
-  font-size: 0.75em;
-  font-weight: 400;
-  background: color-mix(in srgb, var(--SmartThemeBodyColor, #999) 12%, transparent);
+#lin-prefill-guard-panel[open] > .lpg-heading::before,#lin-prefill-guard-panel .lpg-advanced[open] > summary::before,#lin-prefill-guard-panel .lpg-helpbox[open] > summary::before {transform:rotate(45deg);}
+#lin-prefill-guard-panel .lpg-title {display:flex;align-items:baseline;flex-wrap:wrap;gap:3px 7px;flex:1;}
+#lin-prefill-guard-panel .lpg-title strong {font-size:1.05em;letter-spacing:.015em;}
+#lin-prefill-guard-panel .lpg-title small,#lin-prefill-guard-panel .lpg-help,#lin-prefill-guard-panel .lpg-hint {color:var(--lpg-soft);font-size:.87em;line-height:1.48;}
+#lin-prefill-guard-panel .lpg-badge {display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;border:1px solid var(--lpg-line);background:var(--lpg-tint);font-size:.76em;text-align:center;}
+#lin-prefill-guard-panel .lpg-badge[data-state=ok] {background:var(--lpg-wash);}
+#lin-prefill-guard-panel .lpg-badge[data-state=warn] {border-color:#ca995b;}
+#lin-prefill-guard-panel .lpg-body {padding:0 12px 12px;min-width:0;}
+#lin-prefill-guard-panel .lpg-current {font-size:.84em;color:var(--lpg-soft);line-height:1.5;margin:0 0 8px;}
+#lin-prefill-guard-panel .lpg-tabs {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:2px;padding:3px;border:1px solid var(--lpg-line);border-radius:10px;background:var(--lpg-tint);}
+#lin-prefill-guard-panel button {touch-action:manipulation;color:var(--lpg-ink);}
+#lin-prefill-guard-panel .lpg-tab {
+  cursor:pointer;min-width:0;min-height:44px;border:1px solid transparent;border-radius:7px;padding:3px 2px;background:transparent;
+  color:inherit;font:inherit;font-size:.85em;line-height:1.25;
 }
-#lin-prefill-guard-panel .lpg-badge[data-state="ok"] {
-  background: color-mix(in srgb, var(--lpg-accent) 25%, transparent);
+#lin-prefill-guard-panel .lpg-tab[aria-selected=true] {background:var(--lpg-wash);border-color:var(--lpg-accent);font-weight:700;}
+#lin-prefill-guard-panel .lpg-page {min-width:0;}
+#lin-prefill-guard-panel .lpg-intro {margin:15px 0 10px;}
+#lin-prefill-guard-panel .lpg-intro h3 {font-size:1.12em;margin:0 0 4px;}
+#lin-prefill-guard-panel h4 {margin:0 0 5px;font-size:1em;}
+#lin-prefill-guard-panel .lpg-group,#lin-prefill-guard-panel .lpg-advanced {
+  min-width:0;padding:12px;margin:10px 0;background:var(--lpg-tint);border:1px solid var(--lpg-line);border-radius:9px;
 }
-#lin-prefill-guard-panel .lpg-body { padding: 0 14px 14px; }
-#lin-prefill-guard-panel .lpg-hint { font-size: 0.85em; line-height: 1.65; opacity: 0.8; margin: 8px 0; }
-#lin-prefill-guard-panel .lpg-check { display: flex; gap: 9px; align-items: center; padding: 8px 0; cursor: pointer; }
-#lin-prefill-guard-panel .lpg-check input { flex: 0 0 auto; accent-color: var(--lpg-accent); }
-#lin-prefill-guard-panel .lpg-field { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
-#lin-prefill-guard-panel .lpg-field select,
-#lin-prefill-guard-panel .lpg-field textarea { width: 100%; min-width: 0; box-sizing: border-box; font: inherit; font-size: 0.9em; }
-#lin-prefill-guard-panel .lpg-field select { min-height: 42px; }
-#lin-prefill-guard-panel .lpg-field textarea { resize: vertical; line-height: 1.6; }
-#lin-prefill-guard-panel .lpg-advanced { margin-top: 12px; }
-#lin-prefill-guard-panel .lpg-advanced summary { padding: 7px 0; cursor: pointer; }
-#lin-prefill-guard-panel .lpg-status {
-  margin: 14px 0 10px;
-  padding: 11px;
-  border-left: 3px solid var(--lpg-accent);
-  background: color-mix(in srgb, var(--lpg-accent) 7%, transparent);
-  border-radius: 4px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-size: 0.85em;
-  line-height: 1.7;
+#lin-prefill-guard-panel .lpg-advanced {padding:2px 12px;}
+#lin-prefill-guard-panel .lpg-advanced[open] {padding-bottom:10px;}
+#lin-prefill-guard-panel .lpg-group .lpg-advanced {background:transparent;}
+#lin-prefill-guard-panel .lpg-advanced > summary,#lin-prefill-guard-panel .lpg-helpbox > summary {cursor:pointer;display:flex;align-items:center;gap:7px;min-height:44px;padding:4px 1px;list-style:none;line-height:1.45;}
+#lin-prefill-guard-panel .lpg-advanced > summary {font-weight:600;}
+#lin-prefill-guard-panel .lpg-helpbox {background:transparent;margin:0;}
+#lin-prefill-guard-panel .lpg-helpbox > summary {width:fit-content;max-width:100%;font-size:.86em;text-decoration:underline;text-underline-offset:3px;}
+#lin-prefill-guard-panel .lpg-helpbox > summary::before {width:6px;height:6px;}
+#lin-prefill-guard-panel .lpg-helpbox p {margin:0 0 6px;font-size:.88em;line-height:1.55;}
+#lin-prefill-guard-panel .lpg-helpbox p:last-child {margin-bottom:10px;}
+#lin-prefill-guard-panel .lpg-field {display:grid;gap:5px;min-width:0;}
+#lin-prefill-guard-panel .lpg-setting {padding:7px 0 0;min-width:0;}
+#lin-prefill-guard-panel .lpg-setting + .lpg-setting {border-top:1px solid var(--lpg-line);}
+#lin-prefill-guard-panel .lpg-label,#lin-prefill-guard-panel legend {font-weight:600;font-size:.98em;}
+#lin-prefill-guard-panel .lpg-field select,#lin-prefill-guard-panel textarea,#lin-prefill-guard-panel .lpg-search,#lin-prefill-guard-panel .lpg-records {
+ margin:0;max-width:100%;width:100%;min-width:0;min-height:44px;border-radius:7px;font:inherit;font-size:max(16px,.92em);line-height:1.4;
 }
-#lin-prefill-guard-panel .lpg-button { width: auto; min-height: 40px; padding: 7px 12px; cursor: pointer; font: inherit; font-size: 0.9em; }
-#lin-prefill-guard-panel .lpg-button:disabled { opacity: 0.45; cursor: not-allowed; }
-#lin-prefill-guard-panel .lpg-preview { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; font-size: 0.85em; line-height: 1.65; padding: 8px; }
-#lin-prefill-guard-panel .lpg-search,
-#lin-prefill-guard-panel .lpg-records { width: 100%; box-sizing: border-box; min-width: 0; font: inherit; font-size: 0.85em; }
-#lin-prefill-guard-panel .lpg-search { min-height: 42px; }
-#lin-prefill-guard-panel .lpg-records { margin: 8px 0; }
-#lin-prefill-guard-panel .lpg-records option { padding: 8px 5px; overflow: hidden; text-overflow: ellipsis; }
-#lin-prefill-guard-panel .lpg-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-#lin-prefill-guard-panel .lpg-record-detail { max-height: 65vh; user-select: text; }
-#lin-prefill-guard-panel .lpg-audit { white-space: pre-wrap; }
-@media (max-width: 480px) {
-  #lin-prefill-guard-panel .lpg-body { padding: 0 10px 12px; }
-  #lin-prefill-guard-panel .lpg-actions .lpg-button { flex: 1 1 44%; }
+#lin-prefill-guard-panel textarea {padding:8px;resize:vertical;}
+#lin-prefill-guard-panel select {cursor:pointer;}
+#lin-prefill-guard-panel .lpg-check {display:flex;justify-content:space-between;align-items:center;gap:10px;min-height:44px;cursor:pointer;margin:0;}
+#lin-prefill-guard-panel .lpg-check-word {display:grid;gap:3px;min-width:0;}
+#lin-prefill-guard-panel .lpg-check input {flex:none;min-width:20px;width:20px;height:20px;margin:0 2px;accent-color:var(--lpg-accent);}
+#lin-prefill-guard-panel .lpg-choices {padding:0;margin:0;border:none;min-width:0;}
+#lin-prefill-guard-panel .lpg-choices legend {padding:0;}
+#lin-prefill-guard-panel .lpg-choices > .lpg-help {display:block;margin:3px 0 6px;}
+#lin-prefill-guard-panel .lpg-choice {
+ cursor:pointer;display:flex;align-items:center;gap:9px;min-height:44px;margin:4px 0 0;padding:7px 9px;
+ border:1px solid var(--lpg-line);border-radius:7px;line-height:1.35;
 }
-#lin-prefill-guard-panel .lpg-badge[data-state="warn"] {
-    color: #ffd199;
-    border-color: #b57938;
-    background: #382a20;
+#lin-prefill-guard-panel .lpg-choice input[type=radio] {appearance:auto;-webkit-appearance:radio;flex:none;width:18px;min-width:18px;height:18px;margin:0;accent-color:var(--lpg-accent);}
+#lin-prefill-guard-panel .lpg-choice:has(input:checked) {background:var(--lpg-wash);border-color:var(--lpg-accent);}
+#lin-prefill-guard-panel .lpg-choice input:checked + span {font-weight:600;}
+#lin-prefill-guard-panel .lpg-hint {margin:4px 0 7px;}
+#lin-prefill-guard-panel .lpg-notice {margin:8px 0; padding:8px 10px;border-inline-start:3px solid var(--lpg-accent);background:var(--lpg-wash);font-size:.87em;line-height:1.5;}
+#lin-prefill-guard-panel .lpg-button {min-height:44px;max-width:100%;width:auto;padding:7px 11px;display:inline-flex;align-items:center;justify-content:center;white-space:normal;cursor:pointer;
+  background:var(--lpg-tint);border:1px solid var(--lpg-line);border-radius:7px;font:inherit;font-size:.93em;line-height:1.35;}
+#lin-prefill-guard-panel .lpg-link {text-decoration:underline;text-underline-offset:3px;background:transparent;border-color:transparent;padding:5px 1px;}
+#lin-prefill-guard-panel .lpg-shortcut {width:100%;display:grid;grid-template-columns:auto 1fr auto;text-align:start;gap:8px;margin:4px 0;background:transparent;}
+#lin-prefill-guard-panel .lpg-shortcut .lpg-help {text-align:end;}
+#lin-prefill-guard-panel .lpg-button:disabled {opacity:.54;cursor:not-allowed;}
+#lin-prefill-guard-panel .lpg-actions {display:flex;gap:5px;flex-wrap:wrap;}
+#lin-prefill-guard-panel .lpg-action-item {padding:6px 0;}
+#lin-prefill-guard-panel .lpg-status,#lin-prefill-guard-panel .lpg-preview {white-space:pre-wrap;overflow-wrap:anywhere;font-size:.87em;line-height:1.55;max-height:45vh;overflow:auto;user-select:text;}
+#lin-prefill-guard-panel .lpg-preview {padding:6px;margin:0;}
+#lin-prefill-guard-panel .lpg-records {margin:8px 0;}
+#lin-prefill-guard-panel .lpg-audit {white-space:pre-wrap;}
+#lin-prefill-guard-panel .lpg-feedback {margin:0;color:var(--lpg-soft);font-size:.84em;}
+#lin-prefill-guard-panel :focus-visible {outline:2px solid var(--lpg-accent);outline-offset:2px;}
+@media(max-width:400px){
+  #lin-prefill-guard-panel .lpg-body {padding:0 8px 8px;}
+  #lin-prefill-guard-panel .lpg-group {padding:9px;}
+  #lin-prefill-guard-panel .lpg-advanced {padding-inline:8px;}
 }
+#lin-prefill-guard-panel .lpg-choice-example {margin:6px 0 0;color:var(--lpg-soft);font-size:.86em;line-height:1.5;}
+#lin-prefill-guard-panel .lpg-effect {margin:5px 0 0;font-size:.87em;line-height:1.45;color:var(--lpg-ink);}
+#lin-prefill-guard-panel .lpg-steps {padding-inline-start:1.55em;margin:3px 0 5px;}
+#lin-prefill-guard-panel .lpg-steps li {padding:2px 0 5px;line-height:1.5;}

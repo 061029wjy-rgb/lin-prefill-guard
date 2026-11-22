@@ -1,0 +1,16 @@
+[
+  {
+    "version": "1.4.0",
+    "mode": "observe",
+    "visibleButDisabled": [
+      "scope",
+      "mode",
+      "reasoningMode"
+    ]
+  },
+  {
+    "modelRequests": 0,
+    "browser": "133.0.6943.0",
+    "st": "1.19.1"
+  }
+]

@@ -1,6 +1,6 @@
 /** Read-only observation of ST's single chat endpoint. Never retries or rewrites a response. */
-import { analyzeOutput, textDigest } from './structure.js?v=1.4.0';
-import { observeConsumed } from './wire-response.js?v=1.4.0';
+import { analyzeOutput, textDigest } from './structure.js?v=1.4.1';
+import { observeConsumed } from './wire-response.js?v=1.4.1';
 const textBuffers = new WeakMap();
 const textValue = value => typeof value === 'string' ? value : Array.isArray(value)
     ? value.filter(p => p && !p.thought && (p.type==null||p.type==='text'||p.type==='output_text')).map(p => typeof p?.text === 'string' ? p.text : '').join('') : '';

@@ -1,10 +1,10 @@
-import { createCoordinator } from './coordinator.js?v=1.4.0';
-import { orderProof } from './gemini4.js?v=1.4.0';
-import { planInjection, REASONS, VERSION, normalizeSettings, getLinState } from './core.js?v=1.4.0';
-import { auditPreset, captureInjection, createHistory, planReasoning, requestKey, requestMeta, recordDiagnosis } from './diagnostics.js?v=1.4.0';
-import { installObserver } from './observer.js?v=1.4.0';
-import { analyzeOutput, structureDiagnosis, textDigest } from './structure.js?v=1.4.0';
-import { createRecovery } from './recovery.js?v=1.4.0';
+import { createCoordinator } from './coordinator.js?v=1.4.1';
+import { orderProof } from './gemini4.js?v=1.4.1';
+import { planInjection, REASONS, VERSION, normalizeSettings, getLinState } from './core.js?v=1.4.1';
+import { auditPreset, captureInjection, createHistory, planReasoning, requestKey, requestMeta, recordDiagnosis } from './diagnostics.js?v=1.4.1';
+import { installObserver } from './observer.js?v=1.4.1';
+import { analyzeOutput, structureDiagnosis, textDigest } from './structure.js?v=1.4.1';
+import { createRecovery } from './recovery.js?v=1.4.1';
 
 export function createController({ getContext, getSettings, onStatus = () => {}, networkTarget = globalThis, hasDraft = () => false }) {
     const ctx = getContext();
