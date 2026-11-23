@@ -99,3 +99,21 @@
 #lin-prefill-guard-panel .lpg-effect {margin:5px 0 0;font-size:.87em;line-height:1.45;color:var(--lpg-ink);}
 #lin-prefill-guard-panel .lpg-steps {padding-inline-start:1.55em;margin:3px 0 5px;}
 #lin-prefill-guard-panel .lpg-steps li {padding:2px 0 5px;line-height:1.5;}
+
+/* One scroll surface. The first six controls are always available without navigation. */
+#lin-prefill-guard-panel{max-width:44rem;margin-inline:auto;}
+#lin-prefill-guard-panel .lpg-main {min-width:0;}
+#lin-prefill-guard-panel .lpg-current{margin:3px 0 7px;color:var(--lpg-soft);}
+#lin-prefill-guard-panel .lpg-profiles{margin:10px 0;padding:0;min-inline-size:0;border:0;}
+#lin-prefill-guard-panel .lpg-profiles legend{padding:0 0 3px;font-weight:650;}
+#lin-prefill-guard-panel .lpg-profile,#lin-prefill-guard-panel .lpg-quick{display:flex;align-items:center;min-height:46px;gap:10px;margin:4px 0;padding:7px 10px;cursor:pointer;border:1px solid var(--lpg-line);border-radius:9px;line-height:1.28;text-align:start;touch-action:manipulation;}
+#lin-prefill-guard-panel .lpg-profile:has(:checked){border-color:var(--lpg-accent);background:var(--lpg-wash);}
+#lin-prefill-guard-panel .lpg-profile:has(:disabled){border-style:dashed;color:var(--lpg-soft);cursor:default;}
+#lin-prefill-guard-panel .lpg-profile input,#lin-prefill-guard-panel .lpg-quick input{appearance:auto;width:20px;height:20px;flex:0 0 20px;margin:0;accent-color:var(--lpg-accent);}
+#lin-prefill-guard-panel .lpg-quick{justify-content:space-between;border:0;border-bottom:1px solid var(--lpg-line);border-radius:0;padding-inline:1px;}
+#lin-prefill-guard-panel .lpg-profile small,#lin-prefill-guard-panel .lpg-quick small{display:block;font-size:.84em;color:var(--lpg-soft);line-height:1.4;margin:2px 0 0;}
+#lin-prefill-guard-panel .lpg-this-turn{margin:10px 0;padding:10px;border-inline-start:3px solid var(--lpg-accent);background:var(--lpg-wash);border-radius:4px;}
+#lin-prefill-guard-panel .lpg-outcome,#lin-prefill-guard-panel .lpg-proof{font-size:.9em;line-height:1.5;margin:4px 0;white-space:pre-line;}
+#lin-prefill-guard-panel .lpg-main-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(9rem,100%),1fr));gap:6px;}
+#lin-prefill-guard-panel .lpg-main-actions button{margin:0;min-height:44px;}
+#lin-prefill-guard-panel :where(label,button,summary):focus-visible,#lin-prefill-guard-panel label:has(input:focus-visible){outline:2px solid var(--lpg-accent);outline-offset:2px;}

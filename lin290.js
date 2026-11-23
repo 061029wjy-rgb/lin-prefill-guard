@@ -1,5 +1,5 @@
 // The 2.9 adapter reads a preset; it never writes a prompt, a message, or a setting.
-import { LIN_PROMPT_ID, LIN_CONFIRM_ID } from './gemini4.js?v=1.4.1';
+import { LIN_PROMPT_ID, LIN_CONFIRM_ID } from './gemini4.js?v=1.4.2';
 
 export const GROUPS = ['100000','100001'];
 const TEXT_TYPES = ['normal','regenerate','swipe'];
@@ -81,14 +81,14 @@ export function wireKind(r) {
 const ccText = v=>typeof v==='string'?v:Array.isArray(v)&&v.length===1&&only(v[0],['type','text'])&&v[0].type==='text'&&typeof v[0].text==='string'?v[0].text:null;
 const nativeText = p => only(p,['text']) && typeof p.text==='string';
 const declared=x=>Array.isArray(x)?x.length>0:x!=null && x!==false && x!=='none' && x!=='';
-export function protocol290(r,p={},type=r?.type) {
+export function protocol290(r,p={},type=r?.type,{hostSearch=false}={}) {
     const kind=wireKind(r);
     if(!['normal','regenerate','swipe','continue','quiet','impersonate'].includes(type))return 'unsupported-type';
     if(!TEXT_TYPES.includes(type))return type==='continue'?'g4-continue':type;
     if(!kind)return '290-shape';
     if([r.assistant_prefill,p.assistant_prefill,r.prefill,r.prefix,r.continuationToken,r.continuation_token].some(declared))return 'native-prefill';
     // ST's Google backend adds its own search tool after the browser event. Leave that whole request intact.
-    if(['makersuite','vertexai'].includes(r.chat_completion_source)&&r.enable_web_search)return '290-host-search';
+    if(['makersuite','vertexai'].includes(r.chat_completion_source)&&r.enable_web_search&&!hostSearch)return '290-host-search';
     if([r.tools,r.functions,r.tool_choice,r.function_call,r.mcp_servers,r.toolConfig,r.tool_config].some(declared))return 'tools';
     const gen=r.generationConfig||{};
     if(r.responseMimeType&&r.responseMimeType!=='text/plain'||r.json_schema||r.jsonSchema||r.response_schema||r.responseSchema||r.responseJsonSchema||r.response_format&&r.response_format.type!=='text'||

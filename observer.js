@@ -1,6 +1,6 @@
 /** Read-only observation of ST's single chat endpoint. Never retries or rewrites a response. */
-import { analyzeOutput, textDigest } from './structure.js?v=1.4.1';
-import { observeConsumed } from './wire-response.js?v=1.4.1';
+import { analyzeOutput, textDigest } from './structure.js?v=1.4.2';
+import { observeConsumed } from './wire-response.js?v=1.4.2';
 const textBuffers = new WeakMap();
 const textValue = value => typeof value === 'string' ? value : Array.isArray(value)
     ? value.filter(p => p && !p.thought && (p.type==null||p.type==='text'||p.type==='output_text')).map(p => typeof p?.text === 'string' ? p.text : '').join('') : '';
@@ -98,7 +98,7 @@ export function addResponseData(stats, data) {
 }
 
 export async function inspectResponse(response, { maxBytes = MAX_BYTES, timeoutMs = MAX_MS, expectedStream, signal,
-    register = () => () => {}, onVisible, needle = '' } = {}) {
+    register = () => () => {}, onVisible, needle = '', sampleNeedle = '' } = {}) {
     const started = Date.now();
     const rawType = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
     // Store only a MIME type, never arbitrary headers, text, URLs, or error messages.
@@ -189,6 +189,7 @@ export async function inspectResponse(response, { maxBytes = MAX_BYTES, timeoutM
         const visible=textBuffers.get(stats)||'';
         stats.output = analyzeOutput(visible);
         if(needle)stats.anchorEcho=visible.includes(needle);
+        if(sampleNeedle)stats.sampleEcho=visible.includes(sampleNeedle);
         if(onVisible)onVisible(visible);
         stats.textDigest = await textDigest(textBuffers.get(stats) || '');
         textBuffers.delete(stats);
@@ -237,7 +238,7 @@ export function installObserver({ target = globalThis, enabled, onDispatch, onRe
         if(!active)return original.apply(this,arguments);
         let id;
         let dispatch;
-        let managed=null, sendInit=init;
+        let managed=null, sendInit=init, transport;
         let expectedStream;
         const signal = init?.signal || input?.signal;
         function observeRequest(body) {
@@ -249,6 +250,10 @@ export function installObserver({ target = globalThis, enabled, onDispatch, onRe
                     if(managed){
                         id=managed.id;
                         if(typeof managed.body==='string' && init){sendInit=Object.create(init);Object.defineProperty(sendInit,'body',{value:managed.body,enumerable:true});}
+                        // This separate layer may only replace the request headers. A failure keeps
+                        // sendInit and its already verified legacy body; original fetch is called exactly once.
+                        if(managed.transport){try{const step=managed.transport(sendInit,input,init);sendInit=step.init;transport=step.why;}
+                            catch{transport='rollback';}}
                     } else id = onDispatch(request);
                 }
             } catch { /* Unsupported request shapes pass through unchanged. */ }
@@ -270,7 +275,7 @@ export function installObserver({ target = globalThis, enabled, onDispatch, onRe
         const sent = Date.now();
         try {
             const actual=original.call(this,input,sendInit);
-            try{managed?.sent?.();}catch{}
+            try{managed?.sent?.(transport);}catch{}
             response=await actual;
         }
         catch (error) {
@@ -292,7 +297,7 @@ export function installObserver({ target = globalThis, enabled, onDispatch, onRe
                         const headers={};for(const k of ['content-type','retry-after']){const v=response.headers.get(k);if(v)headers[k]=v;}
                         const copy=new Response(new Blob(chunks),{status,headers});
                         let recovered='';
-                        track(inspectResponse(copy,{expectedStream,signal,needle:managed.needle,
+                        track(inspectResponse(copy,{expectedStream,signal,needle:managed.needle,sampleNeedle:managed.sampleNeedle,
                           onVisible:managed.passive? s=>{recovered=s;}:undefined}).then(stats=>{
                             if(!active||!managed.valid())return;
                             if(managed.passive && status>=200&&status<300 && stats.recognized && !stats.apiError && !stats.blockReason && !stats.refusal &&

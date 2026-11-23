@@ -1,9 +1,9 @@
-import { family } from './lin290.js?v=1.4.1';
-import { label290 } from './coordinator.js?v=1.4.1';
-import { isGemini4Segment } from './gemini4.js?v=1.4.1';
-import { getLinState, normalizeSettings, plainText, VERSION } from './core.js?v=1.4.1';
-import { deliveryProfile } from './delivery.js?v=1.4.1';
-import { structureDiagnosis, endingDiagnosis, replySignalDiagnosis } from './structure.js?v=1.4.1';
+import { family } from './lin290.js?v=1.4.2';
+import { label290 } from './coordinator.js?v=1.4.2';
+import { isGemini4Segment } from './gemini4.js?v=1.4.2';
+import { getLinState, normalizeSettings, plainText, VERSION } from './core.js?v=1.4.2';
+import { deliveryProfile } from './delivery.js?v=1.4.2';
+import { structureDiagnosis, endingDiagnosis, replySignalDiagnosis } from './structure.js?v=1.4.2';
 
 export const HISTORY_KEY = 'lin_prefill_guard_history_v2';
 export const HISTORY_LIMIT = 50;
@@ -324,12 +324,14 @@ export function formatRecord(record, records = []) {
             'Lin 2.9 请求记录 · '+record.version+' · '+(record.at||''),
             '请求：'+record.type+' / '+record.request?.model+' / '+record.request?.source+'（连接标签）',
             '组装：'+(record.explanation||'')+'；顺序组 '+(e.groups?.join(' / ')||'未核对'),
-            '实验：护盾 '+({off:'关闭',standard:'标准',deep:'深度'}[e.shield]||'关闭')+'；新增随机宏 '+(e.macro?'开':'关')+'；原预设 nonce '+(e.nonce?'已检测到':'未检测到'),
+            '旧格式对照：'+({off:'关闭',standard:'单行文本',deep:'JSON 标识'}[e.shield]||'关闭')+'；新增随机宏 '+(e.macro?'开':'关')+'；原预设 nonce '+(e.nonce?'已检测到':'未检测到'),
             '执行：'+label290(e.status)+'；P0 移动原承接：'+(e.repair?'是':'否'),
             '已规划：'+(e.planned?'是':'否')+'；已提交改动：'+(e.committed?'是':'否')+'；浏览器生成 fetch：'+(e.browserSent?'已调用':'未核对')+'；HTTP 回执：'+(e.httpReceipt?'有':'无')+'；上游路由：无确认',
             '辅助位置：'+(e.location||'无')+'；新增辅助文本 '+(e.addedChars||0)+' 字符；请求净增 '+(e.addedBytes||0)+' 字节；没有用字符或字节估算 token。',
             '泄漏：'+(w.anchorEcho===true?'检测到模型照抄完整辅助标识；可关闭实验，原回复未清洗。':w.anchorEcho===false?'未检测到完整标识':'无可用证据'),
         ];
+        if(e.profile!=null)lines.push('协议模式：'+(e.profile==='standard'?'标准':'关闭')+'；浏览器接收格式：'+label290(e.transport)+'；Google 联网：'+(e.search?'开':'关')+'；纯搜索承接修复：'+(e.bodyStrategy==='search-tail'?'已执行':'无')+'。');
+        if(w.sampleEcho===true)lines.push('返回文本含完整样本号；如不希望出现，可关闭独立随机宏。未修改模型回复。');
         if(record.wire)lines.push(responseDiagnosis(w,record.request),'HTTP '+(w.httpStatus??'未知')+'；结束 '+(w.finishReason||'未知')+(w.doneWithoutReason?'（有 DONE，缺结束原因）':'')+'；可见文本字段 '+(w.visibleChars??'未知')+' 字符',
             '渠道输入 token：'+(w.promptTokens??'未知')+'；缓存读取 token：'+(w.cacheReadTokens??'未知')+'；缓存收益需同条件对照。');
         if(record.rendered)lines.push('酒馆保存原文 '+record.rendered.chars+' 字符；不能证明文学质量。');

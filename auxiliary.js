@@ -1,14 +1,7 @@
 // Owned input experiment. No macros execute on source text. A request sample is not a credential.
-import {systemKey} from './lin290.js?v=1.4.1';
+import {systemKey} from './lin290.js?v=1.4.2';
 const encoder=new TextEncoder();
-const size={short:8,medium:16,long:24};
-const hex=b=>Array.from(b,n=>n.toString(16).padStart(2,'0')).join('');
-export function drawSample(settings,getBytes=n=>globalThis.crypto.getRandomValues(new Uint8Array(n))) {
-    const chars=size[settings.macroSize]??8, groups=['1','2','3'].includes(String(settings.macroGroups))?Number(settings.macroGroups):1;
-    const bytes=getBytes(chars*groups/2);
-    if(!(bytes instanceof Uint8Array)||bytes.length!==chars*groups/2)throw Error('random source unavailable');
-    return Array.from({length:groups},(_,i)=>hex(bytes.subarray(i*chars/2,(i+1)*chars/2))).join('-');
-}
+export {drawSample} from './sample-session.js?v=1.4.2';
 export function attachment(mode,sample) {
     if(mode==='deep')return JSON.stringify({lin:{format:1,...(sample?{sample}: {})}});
     if(mode==='standard')return 'LPG format=1'+(sample?' sample='+sample:'');
