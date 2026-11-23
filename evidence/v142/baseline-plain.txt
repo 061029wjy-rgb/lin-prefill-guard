@@ -1,0 +1,387 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> lin-prefill-guard@1.4.1 test
+> node --test
+
+﹣ actual Lin2.6.3: 48 CoT/mode/generation combinations preserve source and budgets (0.744885ms) # SKIP
+﹣ actual 1.2.5 feedback: three short replies are flagged; helper calls stay unassociated (0.105997ms) # SKIP
+✔ saved HTML CoT is not described as delivered story prose (25.683092ms)
+✔ manual inspection analyzes an existing reply without a generation or stored source (1.318075ms)
+✔ event mutates only the temporary request.messages property, not saved chat or settings (1.586653ms)
+✔ late registration does not accumulate listeners and follows already registered modifiers (0.805835ms)
+✔ same request event twice is idempotent (1.08224ms)
+✔ quiet requests use their own payload.type and do not overwrite the visible generation status (0.513923ms)
+✔ dispose removes listeners and stops all request mutation (0.278963ms)
+✔ local preview neither sends nor mutates and does not masquerade as an actual injection (0.920776ms)
+✔ empty text is reported without changing a response or triggering a new request (1.938045ms)
+✔ unsupported event API is reported instead of guessed (0.630716ms)
+✔ frozen request is preserved and reported as an error (0.374556ms)
+✔ a settings UI exception cannot break request preparation (0.639338ms)
+✔ serialized request is checked independently and linked to the exact response (11.012443ms)
+✔ a later appended message is detected at the send boundary (2.639915ms)
+✔ missing injection cannot masquerade as verified success (1.54434ms)
+✔ disabling network capture retains event history without claiming transmission (0.531418ms)
+✔ budget adjustment only changes an eligible outgoing request, never preset settings (0.418371ms)
+✔ end without MESSAGE_RECEIVED is logged; later valid message still updates it (1.324354ms)
+✔ old messages, first messages and switched chats cannot be attributed as a reply (0.334787ms)
+✔ duplicate event keeps one history entry and local preview does not create one (0.366253ms)
+✔ repeated preparation after send preserves dispatch, response, and saved-body evidence (2.245391ms)
+✔ duplicate preparation during generation does not move the baseline past the new reply (3.230422ms)
+✔ regenerate accepts the normal completion event produced by saveReply (1.052ms)
+✔ continuation recognizes appendFinal while swipe rejects an unrelated older message (1.107553ms)
+✔ identical pending requests are ambiguous and are never credited to a guessed record (2.016581ms)
+✔ two copies of one cue do not verify an incomplete assistant/user pair (1.272117ms)
+✔ same-role message merge retains verifiable full injection without storing surrounding chat (1.098249ms)
+✔ a cue inside a merged message is not marked last if more content follows it (1.406656ms)
+✔ late network diagnostics keep saved-text evidence visible in the status panel (1.965195ms)
+✔ unmatched sends keep candidate links but do not claim that requests were correlated (1.616408ms)
+✔ moves only the independent Lin prompt; all other objects and request fields remain unchanged (5.309855ms)
+✔ normal generation variant undefined is supported (0.288208ms)
+✔ normal generation variant  is supported (0.263151ms)
+✔ normal generation variant normal is supported (0.207157ms)
+✔ normal generation variant regenerate is supported (0.85578ms)
+✔ normal generation variant swipe is supported (0.193226ms)
+✔ quiet is skipped without touching messages (0.375688ms)
+✔ impersonate is skipped without touching messages (0.388927ms)
+✔ continue is skipped without touching messages (0.321437ms)
+✔ unknown-future-type is skipped without touching messages (0.334056ms)
+✔ disabled extension is a no-op (0.638256ms)
+✔ disabled Lin prompt is respected even if a matching text exists in chat history (0.158115ms)
+✔ other presets are excluded by default (0.225304ms)
+✔ manual all-presets scope works without matching Lin settings (0.335718ms)
+✔ missing Lin entry is restored when its current preset switch is on (0.260816ms)
+✔ a merged message is never substring-deleted (0.226466ms)
+✔ repeated invocation and a JSON-cloned retry do not duplicate the tail (0.452772ms)
+✔ owned objects can be repositioned after another listener appends a message (0.178705ms)
+✔ partial/quoted markers and unrelated assistant messages survive (0.118506ms)
+✔ a single text block is matched, while multimodal and signed blocks stay intact (0.180988ms)
+✔ native assistant prefill is never stacked (0.110924ms)
+✔ native continue prefill is respected even when continue enhancement is enabled (0.193908ms)
+✔ non-native continue uses a completion cue and preserves partial text (0.277983ms)
+✔ active tool request tools is untouched (0.132566ms)
+✔ active tool request functions is untouched (0.068392ms)
+✔ active tool request tool_choice is untouched (0.104906ms)
+✔ in-flight tool result and pending tool use are untouched (0.18903ms)
+✔ structured output is untouched (0.146477ms)
+✔ user-only compatibility mode adds exactly one message (0.156202ms)
+✔ empty and overlong custom prompts cause a visible skip (0.159506ms)
+✔ invalid payloads are not modified (0.179617ms)
+✔ global prompt-order switch wins over another list and the prompt.enabled convenience field (0.122892ms)
+✔ fresh installation preserves preset messages; enhancement defaults to a single user message (0.697334ms)
+✔ native prefill in settings is respected even when not copied to generate_data (0.157103ms)
+✔ reimported Lin entry can be identified narrowly without depending on a filename (0.173777ms)
+✔ prompt generation triggers are not bypassed by restoring a missing entry (0.182611ms)
+✔ upgrade retains saved pair mode and custom fields; only stock legacy nudge is refreshed (0.300135ms)
+✔ a thought-marked text block is never removed as a plain Lin prompt (0.182351ms)
+✔ missing preset metadata can recover only a complete outgoing Lin2.4 entry (0.288277ms)
+✔ outgoing fallback rejects merged, partial, signed, historical and ambiguous entries (2.215896ms)
+✔ outgoing fallback never overrides explicit preset switches or generation triggers (0.137664ms)
+✔ 5013 characters of Lin_CoT with STOP never count as story prose (29.488336ms)
+✔ split comment plus actual prose separates metadata from output (6.085466ms)
+✔ unfinished comment is detected even with STOP (1.472835ms)
+✔ fenced HTML examples are not interpreted as hidden comments or components (0.996488ms)
+✔ unclosed component and code fence are diagnosed without fabricating the missing suffix (1.269142ms)
+✔ native thinking tags inside content are not accepted as a completed body (0.790703ms)
+✔ SSE EOF without terminator is reported even when partial text exists (1.858536ms)
+✔ finish reason, DONE or provider message_stop are valid terminal evidence (2.707826ms)
+✔ final snapshot after deltas replaces the count instead of counting the same text twice (1.131207ms)
+✔ nameless Lin2.6 gets an actual delivery guard in both injection modes (2.25191ms)
+✔ guard is idempotent and respects its switch (0.495545ms)
+✔ module order switches and generation triggers override dormant prompt.enabled fields (0.632508ms)
+✔ unknown preset names do not activate Lin2.6 guard (0.319244ms)
+✔ absent order never implies that a module is enabled (0.092768ms)
+✔ diagnostic labels input counts and warns about component stop sequences without altering them (0.656815ms)
+﹣ real preset compatibility: LIN25_PRESET_PATH (0.059238ms) # SKIP
+﹣ real preset compatibility: LIN26_PRESET_PATH (0.036945ms) # SKIP
+﹣ real preset compatibility: LIN26_FIXED_PRESET_PATH (0.025398ms) # SKIP
+✔ history is bounded, survives a new controller/store, and clears durably (5.877407ms)
+✔ corrupt or unavailable persistence does not throw or lose in-page records (0.479751ms)
+✔ metadata never captures chats, headers, keys, stops, or provider URLs (0.475645ms)
+✔ budget adjustment is opt-in and does not invent parameters for unknown models (0.854588ms)
+✔ reasoning-only, tool-only and unrecognized replies have distinct diagnoses (0.778034ms)
+✔ history detail distinguishes prepared from sent and avoids claiming delivery (0.845234ms)
+✔ supported text-model levels are distinguished from image and unknown Gemini aliases (0.328127ms)
+✔ partial capture and explicit refusal are not presented as complete output or silent emptiness (0.186146ms)
+✔ gemini-4-argon normal: restore one misplaced preset object without altering its contents or any other message (4.90878ms)
+✔ gemini-4-argon swipe: restore one misplaced preset object without altering its contents or any other message (0.39144ms)
+✔ gemini-4-argon regenerate: restore one misplaced preset object without altering its contents or any other message (0.284131ms)
+✔ gemini-4-carbon normal: restore one misplaced preset object without altering its contents or any other message (0.235279ms)
+✔ gemini-4-carbon swipe: restore one misplaced preset object without altering its contents or any other message (0.294577ms)
+✔ gemini-4-carbon regenerate: restore one misplaced preset object without altering its contents or any other message (0.406733ms)
+✔ two anchors only are sufficient when optional parts are absent; plain text blocks retain their byte content (0.299094ms)
+✔ an empty trailing placeholder is not a valid user turn; preserve it and all existing object identities (0.304602ms)
+✔ matches only the two specified models and connection types; channel aliases do not certify the backend (2.548039ms)
+✔ protected jobs, other versions, disabled prompts, missing anchors and ambiguous matches are unchanged (2.217759ms)
+✔ new installations select the targeted adapter; old modes remain explicit choices (0.948577ms)
+✔ controller serializes the repaired order exactly once; verifies the actual browser dispatch without storing cue or chat (33.747483ms)
+✔ provider continuation is distinct from a stop or a restriction; no raw token is stored and the local recovery action sends no request (5.314212ms)
+✔ gemini-4-carbon keeps Lin rules and real story, with assistant directly before final confirmation (3.791944ms)
+✔ gemini-4-hydrogen keeps Lin rules and real story, with assistant directly before final confirmation (0.428576ms)
+✔ gemini-4-argon keeps Lin rules and real story, with assistant directly before final confirmation (0.324441ms)
+✔ observe, normal compatibility, host-only fields, non-chat, tools and ambiguous anchors never enter the new path (3.20282ms)
+✔ host single-text block is preserved; edited or missing maximization paragraph is not removed (1.674965ms)
+✔ separate Google usage counts sum to cap; inclusive or conflicting formats never double count (1.711959ms)
+✔ live controller commits once and verifies both listener orders at the fetch boundary without altering the host response (51.055728ms)
+✔ CoT activation follows order, not stale enabled flag: 标准CoT (5.830167ms)
+✔ CoT activation follows order, not stale enabled flag: 中等CoT (0.280957ms)
+✔ CoT activation follows order, not stale enabled flag: 超长CoT (0.286705ms)
+✔ all three disabled stays conditional and does not force a fresh CoT (0.323319ms)
+✔ three enabled gives a conflict warning without rewriting any switch (3.155099ms)
+✔ CoT triggers and absent order are respected for all variants (0.566189ms)
+✔ known empty CoT and arbitrary name do not create a new output requirement (0.237803ms)
+✔ compatible copied CoT needs both family and actual format signature (0.41126ms)
+✔ diagnostic export names the actual medium CoT and its evidence boundary (4.171287ms)
+✔ outer options closure cannot hide missing, duplicate, empty or reordered choices (3.981155ms)
+✔ complete choices and fenced examples are not falsely called truncated (3.009623ms)
+✔ empty final message does not erase delivered delta (null) (37.756568ms)
+✔ empty final message does not erase delivered delta ("") (1.999145ms)
+✔ byte-limited observation cannot truncate the original response (1.680963ms)
+✔ timed-out clone observation leaves the source stream alive (33.405285ms)
+✔ restriction is consistent in badge and detail: SPII (2.037622ms)
+✔ restriction is consistent in badge and detail: MODEL_ARMOR (0.218264ms)
+✔ unspecified incomplete status does not invent token exhaustion (0.274186ms)
+﹣ actual Lin2.6.2 activates medium CoT and keeps file byte-identical (0.076753ms) # SKIP
+﹣ actual Lin2.6.2 switches 0 / user / normal (0.078126ms) # SKIP
+﹣ actual Lin2.6.2 switches 0 / user / regenerate (0.048502ms) # SKIP
+﹣ actual Lin2.6.2 switches 0 / user / swipe (0.031948ms) # SKIP
+﹣ actual Lin2.6.2 switches 0 / pair / normal (0.032779ms) # SKIP
+﹣ actual Lin2.6.2 switches 0 / pair / regenerate (0.038196ms) # SKIP
+﹣ actual Lin2.6.2 switches 0 / pair / swipe (0.026198ms) # SKIP
+﹣ actual Lin2.6.2 switches 1 / user / normal (0.025618ms) # SKIP
+﹣ actual Lin2.6.2 switches 1 / user / regenerate (0.024657ms) # SKIP
+﹣ actual Lin2.6.2 switches 1 / user / swipe (0.024566ms) # SKIP
+﹣ actual Lin2.6.2 switches 1 / pair / normal (0.022223ms) # SKIP
+﹣ actual Lin2.6.2 switches 1 / pair / regenerate (0.025838ms) # SKIP
+﹣ actual Lin2.6.2 switches 1 / pair / swipe (0.172466ms) # SKIP
+﹣ actual Lin2.6.2 switches 2 / user / normal (0.039929ms) # SKIP
+﹣ actual Lin2.6.2 switches 2 / user / regenerate (0.024836ms) # SKIP
+﹣ actual Lin2.6.2 switches 2 / user / swipe (0.02686ms) # SKIP
+﹣ actual Lin2.6.2 switches 2 / pair / normal (0.024135ms) # SKIP
+﹣ actual Lin2.6.2 switches 2 / pair / regenerate (0.024026ms) # SKIP
+﹣ actual Lin2.6.2 switches 2 / pair / swipe (0.023635ms) # SKIP
+﹣ actual Lin2.6.2 switches 3 / user / normal (0.026459ms) # SKIP
+﹣ actual Lin2.6.2 switches 3 / user / regenerate (0.024997ms) # SKIP
+﹣ actual Lin2.6.2 switches 3 / user / swipe (0.022273ms) # SKIP
+﹣ actual Lin2.6.2 switches 3 / pair / normal (0.024186ms) # SKIP
+﹣ actual Lin2.6.2 switches 3 / pair / regenerate (0.021883ms) # SKIP
+﹣ actual Lin2.6.2 switches 3 / pair / swipe (0.023004ms) # SKIP
+﹣ actual Lin2.6.2 switches 4 / user / normal (0.888718ms) # SKIP
+﹣ actual Lin2.6.2 switches 4 / user / regenerate (0.19579ms) # SKIP
+﹣ actual Lin2.6.2 switches 4 / user / swipe (0.041401ms) # SKIP
+﹣ actual Lin2.6.2 switches 4 / pair / normal (0.029113ms) # SKIP
+﹣ actual Lin2.6.2 switches 4 / pair / regenerate (0.028492ms) # SKIP
+﹣ actual Lin2.6.2 switches 4 / pair / swipe (1.13978ms) # SKIP
+﹣ actual Lin2.6.2 switches 5 / user / normal (0.048482ms) # SKIP
+﹣ actual Lin2.6.2 switches 5 / user / regenerate (0.050955ms) # SKIP
+﹣ actual Lin2.6.2 switches 5 / user / swipe (0.069964ms) # SKIP
+﹣ actual Lin2.6.2 switches 5 / pair / normal (0.044026ms) # SKIP
+﹣ actual Lin2.6.2 switches 5 / pair / regenerate (0.050395ms) # SKIP
+﹣ actual Lin2.6.2 switches 5 / pair / swipe (0.069753ms) # SKIP
+﹣ actual Lin2.6.2 switches 6 / user / normal (0.063935ms) # SKIP
+﹣ actual Lin2.6.2 switches 6 / user / regenerate (0.055603ms) # SKIP
+﹣ actual Lin2.6.2 switches 6 / user / swipe (0.053339ms) # SKIP
+﹣ actual Lin2.6.2 switches 6 / pair / normal (0.060229ms) # SKIP
+﹣ actual Lin2.6.2 switches 6 / pair / regenerate (0.049223ms) # SKIP
+﹣ actual Lin2.6.2 switches 6 / pair / swipe (0.046199ms) # SKIP
+﹣ actual Lin2.6.2 switches 7 / user / normal (0.045858ms) # SKIP
+﹣ actual Lin2.6.2 switches 7 / user / regenerate (0.044226ms) # SKIP
+﹣ actual Lin2.6.2 switches 7 / user / swipe (0.040409ms) # SKIP
+﹣ actual Lin2.6.2 switches 7 / pair / normal (0.032869ms) # SKIP
+﹣ actual Lin2.6.2 switches 7 / pair / regenerate (0.037706ms) # SKIP
+﹣ actual Lin2.6.2 switches 7 / pair / swipe (0.041351ms) # SKIP
+﹣ actual Lin2.6.2 continue, native-prefill and non-story request protections (0.044256ms) # SKIP
+✔ split UTF-8 / CRLF SSE preserves text statistics and final reasoning usage (27.06414ms)
+✔ native Gemini separates thought blocks from body and detects budget exhaustion (3.739426ms)
+✔ blocking and HTTP errors are distinguished from empty successful content (3.691075ms)
+✔ unknown/malformed and capped responses are not labelled proven empty (2.898018ms)
+✔ observer forwards the exact arguments and Response, and never retries (4.086902ms)
+✔ only same-origin POST string bodies to the exact chat endpoint are observed (0.963489ms)
+✔ original rejection is propagated and recorded without exposing error text (1.98949ms)
+✔ dispose preserves later wrappers and makes a retained observer inert (0.341587ms)
+✔ time-bounded clone inspection cannot hang the request (6.362977ms)
+✔ DONE does not turn an unknown payload into a proven empty model response (1.385435ms)
+✔ refusal is recorded as a flag without storing its text (0.909298ms)
+✔ SSE is detected from bytes with missing/wrong Content-Type: missing (1.639261ms)
+✔ SSE is detected from bytes with missing/wrong Content-Type: application/json (1.163135ms)
+✔ SSE is detected from bytes with missing/wrong Content-Type: text/plain (1.111058ms)
+✔ JSON returned to a streaming request is diagnosed even under an SSE header (0.956249ms)
+✔ JSON arrays from native Gemini retain usage and finish reason (0.941737ms)
+✔ SSE with CR separators and multiline data works across arbitrary byte boundaries (1.296193ms)
+✔ an SSE message envelope warns about the custom stream adapter instead of claiming empty (0.702753ms)
+✔ malformed SSE frame does not swallow later valid data (0.695972ms)
+✔ HTTP 200 error inside headerless SSE retains no private error text (0.921908ms)
+✔ zero byte responses and NDJSON have separate evidence (2.811109ms)
+✔ each supported account preference has a setup and an example; both states of all switches are explained (1.383111ms)
+✔ saving the three legacy choices while observing neither activates enhancement nor overrides the 2.9 path (2.829286ms)
+✔ the practical examples match the legacy role layout, scope and high/auto reasoning choices (1.039242ms)
+✔ checking a target is read-only; one explicit action invokes the native generator exactly once (6.727118ms)
+✔ stale or unavailable target cannot send: chat identity (1.083667ms)
+✔ stale or unavailable target cannot send: chat id (0.224553ms)
+✔ stale or unavailable target cannot send: character (0.268709ms)
+✔ stale or unavailable target cannot send: new message (0.205515ms)
+✔ stale or unavailable target cannot send: edited reply (0.156963ms)
+✔ stale or unavailable target cannot send: selected swipe (0.199636ms)
+✔ stale or unavailable target cannot send: replaced reply (0.153238ms)
+✔ stale or unavailable target cannot send: input draft (0.213747ms)
+✔ stale or unavailable target cannot send: busy host (0.234729ms)
+✔ stale or unavailable target cannot send: active stream (0.220797ms)
+✔ stale or unavailable target cannot send: group chat (0.343139ms)
+✔ stale or unavailable target cannot send: unsupported API (0.105006ms)
+✔ stale or unavailable target cannot send: missing generator (0.143863ms)
+✔ stale or unavailable target cannot send: late restriction (0.105937ms)
+✔ stale or unavailable target cannot send: late refusal (0.628573ms)
+✔ stale or unavailable target cannot send: invalidated target (0.129131ms)
+✔ an empty reply permits explicit regeneration, not continuation (1.223995ms)
+✔ only notes are eligible for user-initiated completion; a finished stream does not block it (0.617126ms)
+✔ a user/system final message is never selected for replacement (0.135691ms)
+✔ rapid duplicate actions cannot invoke a second generation (0.310811ms)
+✔ host failure is not retried and does not expose the original error in feedback (0.288167ms)
+✔ unrecognized plans or actions cannot send (0.116093ms)
+✔ provider SAFETY takes precedence over partial comment in status and summary (2.073926ms)
+✔ MAX_TOKENS is distinct from SAFETY and STOP (0.284702ms)
+✔ DONE without finish reason is not a proven successful response (0.240326ms)
+✔ dispatch without wire remains pending evidence, not diagnosed truncation (1.666332ms)
+✔ unknown component list does not disable components or mandate absent CoT (0.314186ms)
+✔ profile mismatch requires observed CoT, not merely a short reply (0.166637ms)
+✔ 2.6.3 revision and replaced CoT ID use conditional delivery without mutating preset (2.105473ms)
+✔ disabled known CoT does not activate fixed-column instructions (0.191344ms)
+﹣ actual 2026-10-21 log regression (no private log bundled) (0.218915ms) # SKIP
+✔ new attempt semantics and idempotence: user/swipe (2.894253ms)
+✔ new attempt semantics and idempotence: user/regenerate (0.291192ms)
+✔ new attempt semantics and idempotence: pair/swipe (0.328598ms)
+✔ new attempt semantics and idempotence: pair/regenerate (0.243671ms)
+✔ normal and continue keep separate task semantics; user custom text and pair choice survive (1.271125ms)
+✔ all CoT variants retain selected length instead of a shared 500-character target (0.91724ms)
+✔ unpunctuated long prose is weak evidence even under STOP; it is not budget exhaustion (4.621455ms)
+✔ closed content wrapper still permits sentence-end checks before trailing components (0.763352ms)
+✔ comma ending and closing quotes do not conceal weak evidence (2.265811ms)
+✔ no invented sentence cutoff: short answer (1.319337ms)
+✔ no invented sentence cutoff: list (0.293756ms)
+✔ no invented sentence cutoff: heading (0.24965ms)
+✔ no invented sentence cutoff: table (0.37779ms)
+✔ no invented sentence cutoff: code block (0.311592ms)
+✔ no invented sentence cutoff: standalone HTML component (0.539771ms)
+✔ no invented sentence cutoff: only CoT (0.983179ms)
+✔ no invented sentence cutoff: native text thinking (0.207448ms)
+✔ no invented sentence cutoff: complete paragraph (0.268429ms)
+✔ transport/filter/structural reasons outrank weak sentence evidence (0.287797ms)
+✔ reported incident statistics stay inconclusive without original ending text (0.428996ms)
+✔ delivery comparison uses raw length; continuation and partial captures are excluded (0.114079ms)
+✔ stop metadata is counts only, records all known fields and never changes the request (0.694971ms)
+✔ SSE STOP with unfinished prose passes through byte-for-byte and keeps only diagnostic signals (22.572549ms)
+✔ manual inspection of an old saved reply adds ending evidence without requests or chat edits (2.389364ms)
+✔ HTML wrappers do not hide unfinished prose: div (7.251345ms)
+✔ HTML wrappers do not hide unfinished prose: paragraph/span (0.348006ms)
+✔ HTML wrappers do not hide unfinished prose: styled wrapper (0.416027ms)
+✔ HTML wrappers do not hide unfinished prose: trailing details (0.368657ms)
+✔ HTML wrappers do not hide unfinished prose: nested details (0.483958ms)
+✔ HTML wrappers do not hide unfinished prose: Lin components (0.294006ms)
+✔ HTML wrappers do not hide unfinished prose: prose after details (0.240447ms)
+✔ blank markup is not treated as delivered prose: "   \n" (1.574576ms)
+✔ blank markup is not treated as delivered prose: "<div> &nbsp; </div>" (0.386763ms)
+✔ blank markup is not treated as delivered prose: "<content><p><br></p></content>" (0.355707ms)
+✔ media and fenced examples are not mislabeled as notes or empty tags (1.266488ms)
+✔ misnested tags and stray closings are detected even if counts balance (0.379162ms)
+✔ empty completed responses, refusals and protocol mismatches get different status (0.341436ms)
+✔ the three reported short lengths are warnings, not automatic failure or refusal claims (0.393794ms)
+✔ digest comparison distinguishes identical text from equally long different text (12.066887ms)
+✔ absence of browser crypto falls back to length-only evidence (0.245825ms)
+✔ request counts and API error metadata retain neither raw request nor provider error text (8.784018ms)
+✔ input token usage is retained independently of output and thinking tokens (1.885757ms)
+✔ Request-object observation leaves request bytes and response identity intact (5.03669ms)
+✔ request-body observation never holds up sending or receiving the original request (4.03876ms)
+✔ unsupported body and failed fetch never trigger a second call (0.773868ms)
+✔ a Request clone beyond the observation limit does not truncate the original body (15.479479ms)
+✔ disposing a pending Request observation keeps the original request readable (1.441348ms)
+✔ a midstream abort is classified without discarding already observed text (2.602379ms)
+✔ unassociated helper responses do not replace the story status or take its saved text (12.243449ms)
+✔ manual continuation is single-use and survives a duplicate click without changing settings (1.980187ms)
+✔ reloading retained history still favors the story over the newest helper call (3.09518ms)
+✔ continuation preserves custom text and native/tool/structured request guards (0.974826ms)
+✔ explicit stop remains visible after late transport completion and blocks stale message attribution (1.681513ms)
+✔ a diagnostic planning exception leaves the outgoing payload untouched (0.369628ms)
+✔ late saved-text hashing cannot overwrite evidence after an edit or chat switch (1.251887ms)
+✔ default normal preserves request objects, preset cue and settings even with old enhancements selected (3.618126ms)
+✔ default swipe preserves request objects, preset cue and settings even with old enhancements selected (0.277762ms)
+✔ default regenerate preserves request objects, preset cue and settings even with old enhancements selected (0.239756ms)
+✔ default continue preserves request objects, preset cue and settings even with old enhancements selected (0.281217ms)
+✔ mode migration retains custom text and disabled settings; explicit later choices persist (0.471339ms)
+✔ explicit legacy enhancement still works; diagnostic mode cannot mutate a frozen request (1.416441ms)
+✔ objects, quoted dialogue and notes are not refusal flags: 桌上有一把刀。 (4.215372ms)
+✔ objects, quoted dialogue and notes are not refusal flags: 她拿出菜刀切好苹果，把刀收回刀架。 (1.013663ms)
+✔ objects, quoted dialogue and notes are not refusal flags: “抱歉，我不能帮助你。”他把话说完， (1.710407ms)
+✔ objects, quoted dialogue and notes are not refusal flags: <content>我不能帮助你。他转 (0.34405ms)
+✔ objects, quoted dialogue and notes are not refusal flags: <!-- Lin_CoT:
+我不能帮 (0.326705ms)
+✔ objects, quoted dialogue and notes are not refusal flags: ```text
+I cannot h (1.327539ms)
+✔ direct reply wording creates a weak flag, never a protocol refusal: 抱歉，我不能提供这样的回答。 (15.908685ms)
+✔ direct reply wording creates a weak flag, never a protocol refusal: I'm sorry, but I (2.424225ms)
+✔ direct reply wording creates a weak flag, never a protocol refusal: 请求失败：服务暂时不可用。 (1.251116ms)
+✔ short two-frame streams outrank punctuation hints without inventing filtering (0.893766ms)
+✔ repetition evidence requires same model and text digest, never just equal length (0.874708ms)
+✔ explicit service/transport evidence still takes priority over text heuristics (0.349218ms)
+✔ new analysis cannot change the original SSE response or issue additional requests (4.690147ms)
+✔ controller observes native requests, preserves identity and associates saved text without injection (8.026285ms)
+﹣ actual Lin2.6.4: current 13-column preset and 16 mode/type combinations preserve private source (0.218454ms) # SKIP
+﹣ actual latest 50 records: 10 compact streams, repeated 6/3 groups, no retroactive refusal claims (0.065457ms) # SKIP
+✔ an upstream 503 outranks a subsequent abort or stop event (false) (1.973627ms)
+✔ an upstream 503 outranks a subsequent abort or stop event (true) (0.159296ms)
+✔ provider result survives client error cleanup: 服务端限制 (0.28992ms)
+✔ provider result survives client error cleanup: 服务端限制 (0.091315ms)
+✔ provider result survives client error cleanup: 接口拒答 (0.111846ms)
+✔ transport-only interruption does not invent a provider error or a manual stop (0.339433ms)
+✔ error SSE is passed through unchanged and retained despite an aborted host signal (17.461868ms)
+✔ aborting during the final digest cannot relabel a completed response (4.203955ms)
+✔ gemini-4-carbon continuation is recognized in observe mode without injection metadata (1.399526ms)
+✔ gemini-4-carbon continuation is recognized in enhance mode without injection metadata (0.349158ms)
+✔ gemini-4-carbon continuation is recognized in gemini4 mode without injection metadata (0.222851ms)
+✔ gemini-4-argon continuation is recognized in observe mode without injection metadata (0.238614ms)
+✔ gemini-4-argon continuation is recognized in enhance mode without injection metadata (0.196662ms)
+✔ gemini-4-argon continuation is recognized in gemini4 mode without injection metadata (0.155931ms)
+✔ an explicit interface error permits a manual regenerate, but cannot be continued as prose (0.950329ms)
+✔ a late error invalidates continuation immediately before the explicit action (0.268328ms)
+✔ actual partial model text before a later API error remains eligible for manual continuation (0.17579ms)
+✔ a saved host placeholder after an observed 503 cannot become a recovery prefix (12.116211ms)
+✔ stop events cannot hide a late 503 in the controller or cause a follow-up request (2.09724ms)
+✔ connection labels identify the observed boundary without exporting endpoints (0.643515ms)
+﹣ optional November 11 attachment: distinguish known 503, SAFETY, aborts and short unknown text (0.051617ms) # SKIP
+✔ 2.9: both order groups; runtime roles; enabled empty placeholder creates nothing (3.583204ms)
+✔ 2.9: a unique transposed tail moves only the original cue; no old replacement/cap even in enhance (3.29725ms)
+✔ 2.9: protected protocols, ambiguous anchor, quiet/continue and edited wire skip losslessly (2.620737ms)
+✔ 2.9: target labels and protocol are checked separately; Neon not claimed verified (0.455705ms)
+﹣ user-supplied 2.9 reference: bytes/hash and both actual groups; preserve expanded messages (0.161659ms) # SKIP
+✔ real reversible projection chat off random=false (7.091427ms)
+✔ real reversible projection chat off random=true (2.369724ms)
+✔ real reversible projection chat standard random=false (1.385815ms)
+✔ real reversible projection chat standard random=true (0.819135ms)
+✔ real reversible projection chat deep random=false (0.755501ms)
+✔ real reversible projection chat deep random=true (0.716993ms)
+✔ real reversible projection Google off random=false (1.206189ms)
+✔ real reversible projection Google off random=true (0.495135ms)
+✔ real reversible projection Google standard random=false (0.743613ms)
+✔ real reversible projection Google standard random=true (0.670995ms)
+✔ real reversible projection Google deep random=false (1.515297ms)
+✔ real reversible projection Google deep random=true (0.446692ms)
+✔ second group disagreement, dry run, revoked/preset switch, no lifecycle, ambiguity, other chat, quiet, stopped, changed final evidence are unchanged (1.81379ms)
+✔ one draw per actual task across same or reassembled events and external retries; no exposed ticket or automatic send (1.686812ms)
+✔ 3 lengths × 3 group counts × 2 safe positions; no sampling for deterministic shield (3.159616ms)
+✔ fault injection cannot rewrite existing text, roles, tool parameters, or unrelated root bytes (1.081174ms)
+✔ native snake_case is preserved, mixed payloads, signed turns, tool history, multimodal and nontext schema untouched (1.048435ms)
+✔ no independent place or system prompt off: skip aux, preserve tail; external HTTP services are never inferred (0.194398ms)
+﹣ whole user preset: same macro-expanded active snapshot for all six modes × both order groups (0.046509ms) # SKIP
+✔ ST backend search tools and root response MIME: preserve Google requests including reversed tails; use actual request flags (0.833527ms)
+✔ one hook and one unchanged HTTP response: recover plain visible text; credential, story, sample and signatures never persist (21.604083ms)
+✔ backpressure, original bytes, cancellation reason, read error and bounded capture are independent of the host (5.687335ms)
+✔ non-generation fetch, Request body, foreign origins, queries, method, aborted transport and other wrappers (3.090895ms)
+✔ plain HTTP status, wrapped upstream error, provider safety, budget, continuation, refusal and DONE without reason are distinct (6.997909ms)
+✔ tool recovery lab verifies full OpenAI/Gemini pairs, visible text, SSE finish, preserved signature and negative paths (0.889238ms)
+✔ wrong candidate, tool invocation, truncation, provider rejection, hidden reasoning: no plaintext recovery or forged success (7.34256ms)
+ℹ tests 372
+ℹ suites 0
+ℹ pass 311
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 61
+ℹ todo 0
+ℹ duration_ms 473.89007
