@@ -1,10 +1,8 @@
-import {matchesOwned} from './shield-engine.js?v=1.4.3';
 /** Read-only observation of ST's single chat endpoint. Never retries or rewrites a response. */
-import { analyzeOutput, textDigest } from './structure.js?v=1.4.3';
-import { observeConsumed } from './wire-response.js?v=1.4.3';
+import { analyzeOutput, textDigest } from './structure.js?v=1.3.0';
 const textBuffers = new WeakMap();
 const textValue = value => typeof value === 'string' ? value : Array.isArray(value)
-    ? value.filter(p => p && !p.thought && (p.type==null||p.type==='text'||p.type==='output_text')).map(p => typeof p?.text === 'string' ? p.text : '').join('') : '';
+    ? value.filter(p => !p?.thought && p?.type !== 'thinking').map(p => typeof p?.text === 'string' ? p.text : '').join('') : '';
 function observeText(stats, value, snapshot = false) {
     const text = textValue(value);
     const previous = textBuffers.get(stats) || '';
@@ -18,22 +16,13 @@ function observeText(stats, value, snapshot = false) {
 const ENDPOINT = '/api/backends/chat-completions/generate';
 const MAX_BYTES = 2 * 1024 * 1024;
 const MAX_MS = 600000;
-const CODES=new Set(('STOP END_TURN STOP_SEQUENCE MAX_TOKENS LENGTH CONTINUATION SAFETY PROHIBITED_CONTENT CONTENT_FILTER BLOCKLIST RECITATION SPII MODEL_ARMOR MALFORMED_FUNCTION_CALL UNEXPECTED_TOOL_CALL FUNCTION_CALL TOOL_CALLS TOOL_USE PAUSE_TURN OTHER LANGUAGE IMAGE_SAFETY IMAGE_PROHIBITED_CONTENT IMAGE_RECITATION NO_IMAGE FINISH_REASON_UNSPECIFIED BLOCK_REASON_UNSPECIFIED').split(' '));
-// Extra fields can carry other output. Only strict model-visible echo attribution uses this check.
-const echoFields=new Set('id object created model system_fingerprint service_tier choices candidates usage usageMetadata promptFeedback error responseContent modelVersion responseId createTime'.split(' '));
-const safeCode = value => typeof value==='string'&&CODES.has(value.toUpperCase())?value:'unknown';
+const safeCode = value => typeof value === 'string' ? value.replace(/[^a-zA-Z0-9_.:-]/g, '').slice(0, 100) : '';
 const chars = value => typeof value === 'string' ? value.length : Array.isArray(value)
     ? value.reduce((n, p) => n + (typeof p?.text === 'string' ? p.text.length : 0), 0) : 0;
 
 export function addResponseData(stats, data) {
-    if (!data || typeof data !== 'object') {stats.unverifiedEchoShape=true;return;}
-    if (Array.isArray(data)) { stats.unverifiedEchoShape=true;data.forEach(item => addResponseData(stats, item)); return; }
-    // Be stricter when attributing an entire echo than when counting known text for diagnosis.
-    if(Object.keys(data).some(k=>!echoFields.has(k)))stats.unverifiedEchoShape=true;
-    if(data.candidates&&data.choices||!['choices','candidates','usage','usageMetadata','promptFeedback','error'].some(k=>k in data))stats.unverifiedEchoShape=true;
-    if((data.choices||data.candidates)?.some?.(c=>c?.index!=null&&c.index!==0))stats.unverifiedEchoShape=true;
-    const endings=[data.choices?.[0]?.finish_reason,data.candidates?.[0]?.finishReason].filter(Boolean);
-    if(endings.some(x=>stats.finishReason&&String(x).toUpperCase()!==String(stats.finishReason).toUpperCase()))stats.unverifiedEchoShape=true;
+    if (!data || typeof data !== 'object') return;
+    if (Array.isArray(data)) { data.forEach(item => addResponseData(stats, item)); return; }
     if (data.error) {
         stats.apiError = true; stats.recognized = true;
         // Fixed categories only; never export arbitrary provider error messages.
@@ -41,13 +30,10 @@ export function addResponseData(stats, data) {
         if (Number.isInteger(status) && status >= 400 && status <= 599) stats.apiStatus = status;
     }
     if (data.promptFeedback?.blockReason) { stats.recognized = true; stats.blockReason = safeCode(data.promptFeedback.blockReason); }
-    if (data.candidates?.length>1 || data.choices?.length>1) stats.multipleCandidates=true;
-    const candidate = data.candidates?.find(c=>(c.index??0)===0);
+    const candidate = data.candidates?.[0];
     if (candidate) {
         stats.recognized = true;
         for (const p of candidate.content?.parts || []) {
-            if(!p){stats.unverifiedEchoShape=true;continue;}
-            if(typeof p.text!=='string'||Object.keys(p).some(k=>!['text','thought'].includes(k)))stats.unverifiedEchoShape=true;
             if (p.thought) stats.reasoningChars += chars(p.text);
             else observeText(stats, p.text);
             if (p.functionCall) stats.toolCalls = true;
@@ -59,19 +45,12 @@ export function addResponseData(stats, data) {
     }
     const choice = data.choices?.find(c => c.index === 0) || data.choices?.[0];
     if (choice && (choice.index === undefined || choice.index === 0)) {
-        if(data.responseContent){ // ST sometimes includes an additional native representation.
-            const parts=data.responseContent?.parts;
-            if(!Array.isArray(parts)||parts.some(p=>!p||typeof p.text!=='string'||Object.keys(p).some(k=>k!=='text'))||
-                parts.map(p=>p.text).join('\n\n')!==choice.message?.content)stats.unverifiedEchoShape=true;
-        }
         stats.recognized = true;
         const message = choice.delta || choice.message || {};
-        if(Array.isArray(message.content)&&message.content.some(p=>!p||p.type!=='text'||typeof p.text!=='string'))stats.unverifiedEchoShape=true;
-        if(message.audio||message.annotations?.length||message.images?.length)stats.unverifiedEchoShape=true;
         if (!choice.delta && choice.message) stats.messageEnvelopes = (stats.messageEnvelopes || 0) + 1;
         if (message.content !== undefined || choice.text !== undefined) observeText(stats, message.content ?? choice.text, !choice.delta && !!choice.message);
         stats.reasoningChars += chars(message.reasoning_content ?? message.reasoning);
-        if (message.refusal || Array.isArray(message.content)&&message.content.some(x=>x?.type==='refusal')) stats.refusal = true;
+        if (message.refusal) stats.refusal = true;
         if (message.tool_calls?.length || message.function_call) stats.toolCalls = true;
         if (choice.finish_reason) stats.finishReason = safeCode(choice.finish_reason);
     }
@@ -112,19 +91,17 @@ export function addResponseData(stats, data) {
     if (typeof output === 'number') stats.outputTokens = output;
     if (typeof prompt === 'number') stats.promptTokens = prompt;
     if (typeof total === 'number') stats.totalTokens = total;
-    const cached=usage?.cachedContentTokenCount??usage?.prompt_tokens_details?.cached_tokens;
-    if(Number.isFinite(cached))stats.cacheReadTokens=cached;
 }
 
 export async function inspectResponse(response, { maxBytes = MAX_BYTES, timeoutMs = MAX_MS, expectedStream, signal,
-    register = () => () => {}, onVisible, needle = '', sampleNeedle = '', owned = '', traceNeedle = '' } = {}) {
+    register = () => () => {} } = {}) {
     const started = Date.now();
     const rawType = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
     // Store only a MIME type, never arbitrary headers, text, URLs, or error messages.
     const contentType = /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/.test(rawType) ? rawType.slice(0, 80) : 'missing';
     const stats = { httpStatus: response.status, contentType, expectedStream,
         visibleChars: 0, reasoningChars: 0, recognized: false, parseErrors: 0,
-        receivedBytes: 0, networkReads: 0, maxGapMs: 0, transport: 'unknown', frames: 0, nonDoneData:false, doneMarker: false, responseComplete: false };
+        receivedBytes: 0, networkReads: 0, maxGapMs: 0, transport: 'unknown', frames: 0, doneMarker: false, responseComplete: false };
     const retry = Number(response.headers.get('retry-after'));
     if (response.headers.has('retry-after') && Number.isFinite(retry) && retry >= 0 && retry <= 86400) stats.retryAfterSeconds = retry;
     if (!response.body) { stats.responseComplete = true; stats.output = analyzeOutput(''); return stats; }
@@ -141,7 +118,6 @@ export async function inspectResponse(response, { maxBytes = MAX_BYTES, timeoutM
         if (!text.trim()) return;
         // A stream terminator alone does not identify the provider's payload format.
         if (text.trim() === '[DONE]') { stats.doneMarker = true; return; }
-        stats.nonDoneData=true;
         try { addResponseData(stats, JSON.parse(text)); } catch { stats.parseErrors++; }
     }
     function frame() {
@@ -206,17 +182,10 @@ export async function inspectResponse(response, { maxBytes = MAX_BYTES, timeoutM
         // Snapshot at the end of reading; unrelated host cleanup during the
         // asynchronous digest must not relabel an already completed response.
         if (signal?.aborted) stats.aborted = true;
-        const visible=textBuffers.get(stats)||'';
-        stats.output = analyzeOutput(visible);
-        if(owned)stats.ownedEchoOnly=matchesOwned(visible,owned,sampleNeedle);
-        if(traceNeedle)stats.traceInText=visible.includes(traceNeedle);
-        if(needle)stats.anchorEcho=visible.includes(needle);
-        if(sampleNeedle)stats.sampleEcho=visible.includes(sampleNeedle);
-        if(onVisible)onVisible(visible);
+        stats.output = analyzeOutput(textBuffers.get(stats) || '');
         stats.textDigest = await textDigest(textBuffers.get(stats) || '');
         textBuffers.delete(stats);
     }
-    if(stats.transport==='sse' && stats.doneMarker && !stats.finishReason)stats.doneWithoutReason=true;
     if (expectedStream === true && ['json', 'ndjson'].includes(stats.transport)) stats.protocolMismatch = 'stream-request-non-sse';
     if (expectedStream === false && stats.transport === 'sse') stats.protocolMismatch = 'json-request-sse';
     if (stats.transport === 'sse' && stats.messageEnvelopes) stats.streamMessageEnvelope = true;
@@ -225,7 +194,7 @@ export async function inspectResponse(response, { maxBytes = MAX_BYTES, timeoutM
     return stats;
 }
 
-export function installObserver({ target = globalThis, enabled, onDispatch, onResponse, onError, coordinator, onVisible }) {
+export function installObserver({ target = globalThis, enabled, onDispatch, onResponse, onError }) {
     const original = target.fetch;
     let active = true;
     const readers = new Set();
@@ -257,10 +226,8 @@ export function installObserver({ target = globalThis, enabled, onDispatch, onRe
         finally { clearTimeout(timer); readers.delete(cancel); reader.releaseLock(); }
     }
     async function wrapped(input, init) {
-        if(!active)return original.apply(this,arguments);
         let id;
         let dispatch;
-        let managed=null, sendInit=init, transport;
         let expectedStream;
         const signal = init?.signal || input?.signal;
         function observeRequest(body) {
@@ -268,69 +235,29 @@ export function installObserver({ target = globalThis, enabled, onDispatch, onRe
                 const request = body === null ? null : JSON.parse(body);
                 if (request && active) {
                     expectedStream = typeof request.stream === 'boolean' ? request.stream : undefined;
-                    managed=coordinator?.before(request,body,init,input) || null;
-                    if(managed){
-                        id=managed.id;
-                        if(typeof managed.body==='string' && init){sendInit=Object.create(init);Object.defineProperty(sendInit,'body',{value:managed.body,enumerable:true});}
-                        // This separate layer may only replace the request headers. A failure keeps
-                        // sendInit and its already verified legacy body; original fetch is called exactly once.
-                        if(managed.transport){try{const step=managed.transport(sendInit,input,init);sendInit=step.init;transport=step.why;}
-                            catch{transport='rollback';}}
-                    } else id = onDispatch(request);
+                    id = onDispatch(request);
                 }
             } catch { /* Unsupported request shapes pass through unchanged. */ }
         }
         try {
             const base = target.location?.href || 'http://localhost/';
             const url = new URL(typeof input === 'string' || input instanceof URL ? String(input) : input.url, base);
-            if (active && enabled() && url.origin === new URL(base).origin && url.pathname === ENDPOINT && !url.search && !url.hash && !url.username && !url.password
+            if (active && enabled() && url.origin === new URL(base).origin && url.pathname === ENDPOINT
                 && String(init?.method || input?.method || 'GET').toUpperCase() === 'POST') {
                 // Request objects are used by some host branches. Clone only for
                 // read-only inspection; never consume or replace their body.
-                if (typeof init?.body === 'string' && init.body.length<=4*1024*1024) observeRequest(init.body);
-                else if(coordinator?.belongs()){managed={managed:true};coordinator.unavailable(typeof init?.body==='string'?'too-large':'request-object');}
+                if (typeof init?.body === 'string') observeRequest(init.body);
                 else if (init?.body === undefined && typeof input?.clone === 'function')
                     dispatch = requestBody(input).then(observeRequest);
             }
         } catch { /* Unsupported request shapes pass through unchanged. */ }
         let response;
         const sent = Date.now();
-        try {
-            const actual=original.call(this,input,sendInit);
-            try{managed?.sent?.(transport);}catch{}
-            response=await actual;
-        }
+        try { response = await original.call(this, input, init); }
         catch (error) {
-            const report = () => { if (id && active && (!managed || managed.valid?.())) { try { onError(id, { aborted: error?.name === 'AbortError', networkError: error?.name !== 'AbortError' }); } catch { /* isolated */ } } };
+            const report = () => { if (id && active) { try { onError(id, { aborted: error?.name === 'AbortError', networkError: error?.name !== 'AbortError' }); } catch { /* isolated */ } } };
             if (dispatch) track(dispatch.then(report)); else report();
             throw error;
-        }
-        if(managed){
-            try {
-                if(!managed.valid?.())return response;
-                if(managed.receipt?.(response)===false)return response;
-                if(!managed.capture||!active||!response.body){
-                    if(managed.capture&&id&&active){const empty={httpStatus:response.status,responseComplete:true,receivedBytes:0,visibleChars:0};managed.complete?.(empty);onResponse(id,empty);}
-                    return response;
-                }
-                const status=response.status;
-                return observeConsumed(response,{register:fn=>{readers.add(fn);return ()=>readers.delete(fn);},live:()=>active&&managed.valid(),failed:stats=>onError(id,{httpStatus:status,...stats}),
-                    finish(chunks,timing){
-                        const headers={};for(const k of ['content-type','retry-after']){const v=response.headers.get(k);if(v)headers[k]=v;}
-                        const copy=new Response(new Blob(chunks),{status,headers});
-                        let recovered='';
-                        track(inspectResponse(copy,{expectedStream,signal,register:fn=>{readers.add(fn);return ()=>readers.delete(fn);},needle:managed.needle,sampleNeedle:managed.sampleNeedle,owned:managed.owned,traceNeedle:managed.traceNeedle,
-                          onVisible:managed.passive? s=>{recovered=s;}:undefined}).then(stats=>{
-                            if(!active||!managed.valid())return;
-                            managed.complete?.(stats);
-                            if(managed.passive && status>=200&&status<300 && stats.recognized && !stats.apiError && !stats.blockReason && !stats.refusal &&
-                                !stats.multipleCandidates && !stats.toolCalls && !stats.aborted && !stats.captureLimited && !stats.parseErrors &&
-                                !stats.protocolMismatch && !stats.incomplete && /^(stop|end_turn|stop_sequence)$/i.test(stats.finishReason||'') && recovered)
-                                onVisible?.(id,recovered);
-                            onResponse(id,{...stats,...timing,totalDurationMs:Date.now()-sent});
-                        }).catch(()=>{if(active&&managed.valid())onError(id,{httpStatus:status,captureLimited:true});}));
-                    }});
-            } catch {return response;}
         }
         if ((id || dispatch) && active) {
             try {

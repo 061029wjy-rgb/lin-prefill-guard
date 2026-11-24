@@ -1,10 +1,9 @@
-import { createCoordinator } from './coordinator.js?v=1.4.3';
-import { orderProof } from './gemini4.js?v=1.4.3';
-import { planInjection, REASONS, VERSION, normalizeSettings, getLinState } from './core.js?v=1.4.3';
-import { auditPreset, captureInjection, createHistory, planReasoning, requestKey, requestMeta, recordDiagnosis } from './diagnostics.js?v=1.4.3';
-import { installObserver } from './observer.js?v=1.4.3';
-import { analyzeOutput, structureDiagnosis, textDigest } from './structure.js?v=1.4.3';
-import { createRecovery } from './recovery.js?v=1.4.3';
+import { orderProof } from './gemini4.js?v=1.3.0';
+import { planInjection, REASONS, VERSION, normalizeSettings, getLinState } from './core.js?v=1.3.0';
+import { auditPreset, captureInjection, createHistory, planReasoning, requestKey, requestMeta, recordDiagnosis } from './diagnostics.js?v=1.3.0';
+import { installObserver } from './observer.js?v=1.3.0';
+import { analyzeOutput, structureDiagnosis, textDigest } from './structure.js?v=1.3.0';
+import { createRecovery } from './recovery.js?v=1.3.0';
 
 export function createController({ getContext, getSettings, onStatus = () => {}, networkTarget = globalThis, hasDraft = () => false }) {
     const ctx = getContext();
@@ -45,18 +44,10 @@ export function createController({ getContext, getSettings, onStatus = () => {},
         if (last?.id === recordId) { Object.assign(last, values); response = recordDiagnosis(last); }
         publish();
     }
-    let recovered=null;
-    const coordinator=createCoordinator({getContext,getSettings,id,
-        record(report,context){
-            last=report;response=null;history.put(report);savedTarget=null;recovered=null;
-            active={id:report.id,chat:context.chat,type:report.type,baselineLength:context.chat?.length||0,ended:false};
-            publish();
-        },update:patch});
     function handleRequest(request) {
         if (disposed) return;
         try {
             const context = getContext();
-            if(coordinator.prepare(request))return;
             const preset = context.chatCompletionSettings || {};
             const priorRef = request && requestRecords.get(request);
             const forcedContinue = request?.type === 'continue' && (manualContinue || priorRef?.manualContinue === true);
@@ -145,8 +136,7 @@ export function createController({ getContext, getSettings, onStatus = () => {},
     }
     const observer = installObserver({
         target: networkTarget,
-        enabled: () => !disposed && normalizeSettings(getSettings()).enabled && (coordinator.belongs()||normalizeSettings(getSettings()).captureNetwork),
-        coordinator, onVisible(recordId,text){if(last?.id===recordId)recovered={id:recordId,text};},
+        enabled: () => !disposed && normalizeSettings(getSettings()).enabled && normalizeSettings(getSettings()).captureNetwork,
         onDispatch(request) {
             if (!Array.isArray(request.messages) || ['quiet', 'impersonate'].includes(request.type)) return null;
             const key = requestKey(request);
@@ -213,7 +203,6 @@ export function createController({ getContext, getSettings, onStatus = () => {},
     });
 
     function lateRegistration(type, _options, dryRun) {
-        if(!disposed)coordinator.start(type,dryRun);
         if (!disposed && requestEvent && typeof bus.makeLast === 'function') bus.makeLast(requestEvent, handleRequest);
         if (type !== undefined && !dryRun && !['quiet', 'impersonate'].includes(type)) generating = true;
     }
@@ -248,7 +237,6 @@ export function createController({ getContext, getSettings, onStatus = () => {},
         patch(recordId, { rendered: { chars, reasoningChars, output, textDigest: digest }, lifecycle });
     }
     function onEnd() {
-        coordinator.reset();
         generating = false;
         if (!active) return;
         active.ended = true;
@@ -256,12 +244,11 @@ export function createController({ getContext, getSettings, onStatus = () => {},
         if (!record?.rendered) patch(active.id, { lifecycle: '生成已结束，尚未观察到正文保存事件；检查接口记录。稍后到达的正文事件仍会更新此记录。' });
     }
     function onStop() {
-        coordinator.stop();
         generating = false;
         if (active) patch(active.id, { clientStopped: true, lifecycle: '客户端报告停止；事件未区分手动停止与错误处理。' });
         active = null;
     }
-    function onChatChanged() { coordinator.forget(); recovered=null; pending.length=0; active = null; savedTarget = null; recovery.invalidate(); }
+    function onChatChanged() { active = null; savedTarget = null; recovery.invalidate(); }
     function subscribe(event, fn) { if (event) { bus.on(event, fn); subscriptions.push([event, fn]); } }
     if (!bus || typeof bus.on !== 'function' || !requestEvent) {
         last = { applied: false, reason: 'unsupported-client', explanation: '当前酒馆未提供所需的 Chat Completion 事件。请确认版本或分支兼容。', injected: [], preview: '' };
@@ -270,7 +257,6 @@ export function createController({ getContext, getSettings, onStatus = () => {},
         subscribe(requestEvent, handleRequest);
         subscribe(events.GENERATION_STARTED, lateRegistration);
         subscribe(events.MESSAGE_RECEIVED, onMessage);
-        subscribe(events.MESSAGE_EDITED, () => coordinator.invalidateFresh());
         subscribe(events.GENERATION_ENDED, onEnd);
         subscribe(events.GENERATION_STOPPED, onStop);
         subscribe(events.CHAT_CHANGED, onChatChanged);
@@ -278,11 +264,6 @@ export function createController({ getContext, getSettings, onStatus = () => {},
     }
     return {
         snapshot,
-        getAuxPreview:()=>coordinator.peek(last?.id),
-        getVisibleOutput:()=>recovered?.id===last?.id && normalizeSettings(getSettings()).enabled && normalizeSettings(getSettings()).passiveOutput?recovered?.text||'':'',
-        invalidateProtocol(){coordinator.forget();},
-        invalidateFresh(){coordinator.invalidateFresh();},
-        resetExperiment(){coordinator.forget();recovered=null;},
         prepareRecovery: () => recovery.prepare(),
         async runRecovery(plan, action) {
             if (recoveryRunning) return { ok: false, message: '当前补全或重生成仍在进行，未重复调用。' };
@@ -308,10 +289,10 @@ export function createController({ getContext, getSettings, onStatus = () => {},
             if (!last?.id || unassociated(last)) { last = preferredRecord() || last; response = last ? recordDiagnosis(last) : null; }
             publish();
         },
-        clearHistory() { coordinator.forget();recovered=null;history.clear(); pending.length = 0; active = null; savedTarget = null; recovery.invalidate(); last = null; response = null; publish(); },
+        clearHistory() { history.clear(); pending.length = 0; active = null; savedTarget = null; recovery.invalidate(); last = null; response = null; publish(); },
         idle: () => observer.idle(),
         dispose() {
-            disposed = true; coordinator.dispose(); recovered=null;
+            disposed = true;
             recovery.invalidate();
             observer.dispose();
             const remove = bus?.removeListener || bus?.off;

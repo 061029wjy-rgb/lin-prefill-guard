@@ -1,6 +1,0 @@
-npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
-
-> lin-prefill-guard@1.4.0 check
-> node scripts/check.mjs
-
-Syntax checked: 15 browser modules, fixtures, scripts and tests; shared release version 1.4.0.

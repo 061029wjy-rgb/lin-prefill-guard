@@ -1,2 +1,0 @@
-# Keep original command transcripts byte-for-byte on checkout, including a terminal's final blank line.
-evidence/*.txt -text whitespace=-blank-at-eof

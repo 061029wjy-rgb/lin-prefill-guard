@@ -1,6 +1,0 @@
-npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
-
-> lin-prefill-guard@1.4.2 test:acceptance
-> python3 scripts/verify-142.py
-
-PASS 24 old-mode byte pairs; 16 native comparisons; 82 generation POSTs; 24 Google-shaped localhost calls; visible negotiation A/B [{'version': 'base', 'bodyEqual': True, 'actualAccept': '*/*', 'peerFormat': 'JSON', 'visibleChars': 0, 'actualSTStreamParser': True}, {'version': 'new', 'bodyEqual': True, 'actualAccept': 'text/event-stream', 'peerFormat': 'SSE', 'visibleChars': 7, 'actualSTStreamParser': True}] ; UI [{'cssWidth': 320, 'panelWidth': 306, 'scrollWidth': 306, 'minimumTarget': 44}, {'cssWidth': 375, 'panelWidth': 361, 'scrollWidth': 361, 'minimumTarget': 44}, {'cssWidth': 390, 'panelWidth': 376, 'scrollWidth': 376, 'minimumTarget': 44}, {'cssWidth': 1100, 'panelWidth': 264, 'scrollWidth': 264, 'minimumTarget': 44}]
