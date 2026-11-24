@@ -1,0 +1,52 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> lin-prefill-guard@1.4.3 test:browser
+> python3 scripts/browser-check.py
+
+PASS browser chat-off-plain deltaBytes 0
+PASS browser chat-off-sample deltaBytes 50
+PASS browser chat-standard-plain deltaBytes 43
+PASS browser chat-standard-sample deltaBytes 59
+PASS browser chat-deep-plain deltaBytes 55
+PASS browser chat-deep-sample deltaBytes 79
+PASS browser native-off-plain deltaBytes 0
+PASS browser native-off-sample deltaBytes 31
+PASS browser native-standard-plain deltaBytes 24
+PASS browser native-standard-sample deltaBytes 40
+PASS browser native-deep-plain deltaBytes 36
+PASS browser native-deep-sample deltaBytes 60
+PASS browser skip-drift deltaBytes 0
+PASS browser skip-chat deltaBytes 0
+PASS browser skip-host-search deltaBytes 0
+PASS browser skip-root-json deltaBytes 0
+PASS browser skip-structured deltaBytes 0
+PASS browser skip-signed deltaBytes 0
+PASS browser skip-tools deltaBytes 0
+PASS browser skip-prefix deltaBytes 0
+PASS browser type-continue deltaBytes 0
+PASS browser type-quiet deltaBytes 0
+PASS browser type-impersonate deltaBytes 0
+PASS browser type-regenerate deltaBytes 43
+PASS browser type-swipe deltaBytes 43
+PASS browser swapped-off deltaBytes 0
+PASS browser swapped-deep deltaBytes 55
+PASS browser long-context deltaBytes 43
+PASS browser length-1-early-short deltaBytes 50
+PASS browser length-1-early-medium deltaBytes 58
+PASS browser length-1-early-long deltaBytes 66
+PASS browser length-3-boundary-short deltaBytes 68
+PASS browser length-3-boundary-medium deltaBytes 92
+PASS browser length-3-boundary-long deltaBytes 116
+PASS browser original-100000-off-False deltaBytes 0
+PASS browser original-100000-off-True deltaBytes 50
+PASS browser original-100000-standard-False deltaBytes 43
+PASS browser original-100000-standard-True deltaBytes 59
+PASS browser original-100000-deep-False deltaBytes 55
+PASS browser original-100000-deep-True deltaBytes 79
+PASS browser original-100001-off-False deltaBytes 0
+PASS browser original-100001-off-True deltaBytes 50
+PASS browser original-100001-standard-False deltaBytes 43
+PASS browser original-100001-standard-True deltaBytes 59
+PASS browser original-100001-deep-False deltaBytes 55
+PASS browser original-100001-deep-True deltaBytes 79
+PASS original response bytes, three isolated tool round trips, upload passthrough, disable/reload; Chromium 133.0.6943.0 cases 46

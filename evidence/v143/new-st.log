@@ -1,0 +1,22 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> lin-prefill-guard@1.4.3 test:st
+> python3 scripts/st-check.py
+
+PASS actual ST off False received independent system message index None
+PASS actual ST off True received independent system message index 26
+PASS actual ST standard False received independent system message index 26
+PASS actual ST standard True received independent system message index 26
+PASS actual ST deep False received independent system message index 26
+PASS actual ST deep True received independent system message index 26
+PASS actual ST adapter makersuite search False shield off sample False server tool preserved False
+PASS actual ST adapter makersuite search False shield standard sample False server tool preserved False
+PASS actual ST adapter makersuite search False shield deep sample True server tool preserved False
+PASS actual ST adapter makersuite search True shield off sample False server tool preserved True
+PASS actual ST adapter makersuite search True shield deep sample True server tool preserved True
+PASS actual ST adapter vertexai search False shield off sample False server tool preserved False
+PASS actual ST adapter vertexai search False shield standard sample False server tool preserved False
+PASS actual ST adapter vertexai search False shield deep sample True server tool preserved False
+PASS actual ST adapter vertexai search True shield off sample False server tool preserved True
+PASS actual ST adapter vertexai search True shield deep sample True server tool preserved True
+PASS real frontend, UI extension, settings event, browser POST, ST backend and local responder; no cloud model.

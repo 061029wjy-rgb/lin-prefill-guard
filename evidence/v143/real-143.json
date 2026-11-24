@@ -1,0 +1,671 @@
+{
+  "native": [
+    {
+      "adapter": "makersuite",
+      "search": false,
+      "correctedOldTailFixture": false,
+      "allBodyBytesEqual": true,
+      "effectiveHeadersEqual": true,
+      "nativeJSONEqual": true
+    },
+    {
+      "adapter": "makersuite",
+      "search": false,
+      "correctedOldTailFixture": true,
+      "allBodyBytesEqual": true,
+      "effectiveHeadersEqual": true,
+      "nativeJSONEqual": true
+    },
+    {
+      "adapter": "makersuite",
+      "search": true,
+      "correctedOldTailFixture": false,
+      "allBodyBytesEqual": true,
+      "effectiveHeadersEqual": true,
+      "nativeJSONEqual": true
+    },
+    {
+      "adapter": "makersuite",
+      "search": true,
+      "correctedOldTailFixture": true,
+      "allBodyBytesEqual": true,
+      "effectiveHeadersEqual": true,
+      "nativeJSONEqual": true
+    },
+    {
+      "adapter": "vertexai",
+      "search": false,
+      "correctedOldTailFixture": false,
+      "allBodyBytesEqual": true,
+      "effectiveHeadersEqual": true,
+      "nativeJSONEqual": true
+    },
+    {
+      "adapter": "vertexai",
+      "search": false,
+      "correctedOldTailFixture": true,
+      "allBodyBytesEqual": true,
+      "effectiveHeadersEqual": true,
+      "nativeJSONEqual": true
+    },
+    {
+      "adapter": "vertexai",
+      "search": true,
+      "correctedOldTailFixture": false,
+      "allBodyBytesEqual": true,
+      "effectiveHeadersEqual": true,
+      "nativeJSONEqual": true
+    },
+    {
+      "adapter": "vertexai",
+      "search": true,
+      "correctedOldTailFixture": true,
+      "allBodyBytesEqual": true,
+      "effectiveHeadersEqual": true,
+      "nativeJSONEqual": true
+    }
+  ],
+  "randomCross": [
+    {
+      "arm": "nonce-only",
+      "oldSampleInNative": false,
+      "traceAtST": false,
+      "traceAtPeer": false,
+      "nonPluginContentsIdentical": true,
+      "normalFixtureTextUnchanged": true
+    },
+    {
+      "arm": "old-sample",
+      "oldSampleInNative": true,
+      "traceAtST": false,
+      "traceAtPeer": false,
+      "nonPluginContentsIdentical": true,
+      "normalFixtureTextUnchanged": true
+    },
+    {
+      "arm": "trace-only",
+      "oldSampleInNative": false,
+      "traceAtST": true,
+      "traceAtPeer": false,
+      "nonPluginContentsIdentical": true,
+      "normalFixtureTextUnchanged": true
+    },
+    {
+      "arm": "trace-and-guard",
+      "oldSampleInNative": false,
+      "traceAtST": true,
+      "traceAtPeer": false,
+      "nonPluginContentsIdentical": true,
+      "normalFixtureTextUnchanged": true
+    },
+    {
+      "arm": "old-and-trace-and-guard",
+      "oldSampleInNative": true,
+      "traceAtST": true,
+      "traceAtPeer": false,
+      "nonPluginContentsIdentical": true,
+      "normalFixtureTextUnchanged": true
+    }
+  ],
+  "echoAB": [
+    {
+      "adapter": "makersuite",
+      "generation": "regenerate",
+      "stream": true,
+      "version": "base",
+      "setting": "off",
+      "normalEchoOnly": true,
+      "retriedModelReceivedOwnedMarker": true,
+      "nativeChanges": [],
+      "ordinaryFixtureAnswerOnRetry": false,
+      "otherMessageBytesAndOrderEqual": true
+    },
+    {
+      "adapter": "makersuite",
+      "generation": "regenerate",
+      "stream": true,
+      "version": "new",
+      "setting": "off",
+      "normalEchoOnly": true,
+      "retriedModelReceivedOwnedMarker": true,
+      "nativeChanges": [],
+      "ordinaryFixtureAnswerOnRetry": false,
+      "otherMessageBytesAndOrderEqual": true
+    },
+    {
+      "adapter": "makersuite",
+      "generation": "regenerate",
+      "stream": true,
+      "version": "new",
+      "setting": "standard",
+      "normalEchoOnly": true,
+      "retriedModelReceivedOwnedMarker": false,
+      "nativeChanges": [
+        "systemInstruction.parts: omit owned element"
+      ],
+      "ordinaryFixtureAnswerOnRetry": true,
+      "otherMessageBytesAndOrderEqual": true
+    },
+    {
+      "adapter": "makersuite",
+      "generation": "swipe",
+      "stream": true,
+      "version": "base",
+      "setting": "off",
+      "normalEchoOnly": true,
+      "retriedModelReceivedOwnedMarker": true,
+      "nativeChanges": [],
+      "ordinaryFixtureAnswerOnRetry": false,
+      "otherMessageBytesAndOrderEqual": true
+    },
+    {
+      "adapter": "makersuite",
+      "generation": "swipe",
+      "stream": true,
+      "version": "new",
+      "setting": "off",
+      "normalEchoOnly": true,
+      "retriedModelReceivedOwnedMarker": true,
+      "nativeChanges": [],
+      "ordinaryFixtureAnswerOnRetry": false,
+      "otherMessageBytesAndOrderEqual": true
+    },
+    {
+      "adapter": "makersuite",
+      "generation": "swipe",
+      "stream": true,
+      "version": "new",
+      "setting": "standard",
+      "normalEchoOnly": true,
+      "retriedModelReceivedOwnedMarker": false,
+      "nativeChanges": [
+        "systemInstruction.parts: omit owned element"
+      ],
+      "ordinaryFixtureAnswerOnRetry": true,
+      "otherMessageBytesAndOrderEqual": true
+    },
+    {
+      "adapter": "vertexai",
+      "generation": "regenerate",
+      "stream": true,
+      "version": "base",
+      "setting": "off",
+      "normalEchoOnly": true,
+      "retriedModelReceivedOwnedMarker": true,
+      "nativeChanges": [],
+      "ordinaryFixtureAnswerOnRetry": false,
+      "otherMessageBytesAndOrderEqual": true
+    },
+    {
+      "adapter": "vertexai",
+      "generation": "regenerate",
+      "stream": true,
+      "version": "new",
+      "setting": "off",
+      "normalEchoOnly": true,
+      "retriedModelReceivedOwnedMarker": true,
+      "nativeChanges": [],
+      "ordinaryFixtureAnswerOnRetry": false,
+      "otherMessageBytesAndOrderEqual": true
+    },
+    {
+      "adapter": "vertexai",
+      "generation": "regenerate",
+      "stream": true,
+      "version": "new",
+      "setting": "standard",
+      "normalEchoOnly": true,
+      "retriedModelReceivedOwnedMarker": false,
+      "nativeChanges": [
+        "systemInstruction.parts: omit owned element"
+      ],
+      "ordinaryFixtureAnswerOnRetry": true,
+      "otherMessageBytesAndOrderEqual": true
+    },
+    {
+      "adapter": "vertexai",
+      "generation": "swipe",
+      "stream": true,
+      "version": "base",
+      "setting": "off",
+      "normalEchoOnly": true,
+      "retriedModelReceivedOwnedMarker": true,
+      "nativeChanges": [],
+      "ordinaryFixtureAnswerOnRetry": false,
+      "otherMessageBytesAndOrderEqual": true
+    },
+    {
+      "adapter": "vertexai",
+      "generation": "swipe",
+      "stream": true,
+      "version": "new",
+      "setting": "off",
+      "normalEchoOnly": true,
+      "retriedModelReceivedOwnedMarker": true,
+      "nativeChanges": [],
+      "ordinaryFixtureAnswerOnRetry": false,
+      "otherMessageBytesAndOrderEqual": true
+    },
+    {
+      "adapter": "vertexai",
+      "generation": "swipe",
+      "stream": true,
+      "version": "new",
+      "setting": "standard",
+      "normalEchoOnly": true,
+      "retriedModelReceivedOwnedMarker": false,
+      "nativeChanges": [
+        "systemInstruction.parts: omit owned element"
+      ],
+      "ordinaryFixtureAnswerOnRetry": true,
+      "otherMessageBytesAndOrderEqual": true
+    }
+  ],
+  "requestMimeAB": [
+    {
+      "version": "base",
+      "repair": false,
+      "hostHTTP": 400,
+      "browserMime": "text/plain;charset=UTF-8",
+      "identicalJSONBytes": true,
+      "nativeReceiverCalled": false
+    },
+    {
+      "version": "new",
+      "repair": false,
+      "hostHTTP": 400,
+      "browserMime": "text/plain;charset=UTF-8",
+      "identicalJSONBytes": true,
+      "nativeReceiverCalled": false
+    },
+    {
+      "version": "new",
+      "repair": true,
+      "hostHTTP": 200,
+      "browserMime": "application/json",
+      "identicalJSONBytes": true,
+      "nativeReceiverCalled": true
+    }
+  ],
+  "legacyMatrix": [
+    "legacy:lin:user:keep",
+    "legacy:lin:user:balanced",
+    "legacy:lin:pair:keep",
+    "legacy:lin:pair:balanced",
+    "legacy:all:user:keep",
+    "legacy:all:user:balanced",
+    "legacy:all:pair:keep",
+    "legacy:all:pair:balanced",
+    "2.9:normal:search=true",
+    "2.9:normal:search=false",
+    "2.9:regenerate:search=true",
+    "2.9:regenerate:search=false",
+    "2.9:swipe:search=true",
+    "2.9:swipe:search=false",
+    "2.9:continue:search=true",
+    "2.9:continue:search=false",
+    "2.8.2:gemini4:budget=false",
+    "2.8.2:gemini4:budget=true",
+    "2.8.2:gemini4-story:budget=false",
+    "2.8.2:gemini4-story:budget=true",
+    "legacy:continue:false",
+    "legacy:continue:true",
+    "read-only:observe",
+    "read-only:gemini4"
+  ],
+  "literary": [
+    {
+      "case": "scene-01",
+      "order": 100000,
+      "enabledEntries": 56,
+      "priorSyntheticRepeats": 0,
+      "adapter": "makersuite",
+      "browserBodyMatchesAllArms": true,
+      "nativeMatchesAllArms": true,
+      "allRolesAndContentsMatch": true,
+      "literaryRating": null
+    },
+    {
+      "case": "scene-02",
+      "order": 100000,
+      "enabledEntries": 56,
+      "priorSyntheticRepeats": 25,
+      "adapter": "vertexai",
+      "browserBodyMatchesAllArms": true,
+      "nativeMatchesAllArms": true,
+      "allRolesAndContentsMatch": true,
+      "literaryRating": null
+    },
+    {
+      "case": "scene-03",
+      "order": 100000,
+      "enabledEntries": 56,
+      "priorSyntheticRepeats": 420,
+      "adapter": "makersuite",
+      "browserBodyMatchesAllArms": true,
+      "nativeMatchesAllArms": true,
+      "allRolesAndContentsMatch": true,
+      "literaryRating": null
+    },
+    {
+      "case": "scene-04",
+      "order": 100000,
+      "enabledEntries": 56,
+      "priorSyntheticRepeats": 0,
+      "adapter": "vertexai",
+      "browserBodyMatchesAllArms": true,
+      "nativeMatchesAllArms": true,
+      "allRolesAndContentsMatch": true,
+      "literaryRating": null
+    },
+    {
+      "case": "scene-05",
+      "order": 100000,
+      "enabledEntries": 56,
+      "priorSyntheticRepeats": 25,
+      "adapter": "makersuite",
+      "browserBodyMatchesAllArms": true,
+      "nativeMatchesAllArms": true,
+      "allRolesAndContentsMatch": true,
+      "literaryRating": null
+    },
+    {
+      "case": "scene-06",
+      "order": 100000,
+      "enabledEntries": 56,
+      "priorSyntheticRepeats": 420,
+      "adapter": "vertexai",
+      "browserBodyMatchesAllArms": true,
+      "nativeMatchesAllArms": true,
+      "allRolesAndContentsMatch": true,
+      "literaryRating": null
+    },
+    {
+      "case": "scene-07",
+      "order": 100000,
+      "enabledEntries": 56,
+      "priorSyntheticRepeats": 0,
+      "adapter": "makersuite",
+      "browserBodyMatchesAllArms": true,
+      "nativeMatchesAllArms": true,
+      "allRolesAndContentsMatch": true,
+      "literaryRating": null
+    },
+    {
+      "case": "scene-08",
+      "order": 100000,
+      "enabledEntries": 56,
+      "priorSyntheticRepeats": 25,
+      "adapter": "vertexai",
+      "browserBodyMatchesAllArms": true,
+      "nativeMatchesAllArms": true,
+      "allRolesAndContentsMatch": true,
+      "literaryRating": null
+    },
+    {
+      "case": "scene-09",
+      "order": 100000,
+      "enabledEntries": 56,
+      "priorSyntheticRepeats": 420,
+      "adapter": "makersuite",
+      "browserBodyMatchesAllArms": true,
+      "nativeMatchesAllArms": true,
+      "allRolesAndContentsMatch": true,
+      "literaryRating": null
+    },
+    {
+      "case": "scene-10",
+      "order": 100000,
+      "enabledEntries": 56,
+      "priorSyntheticRepeats": 0,
+      "adapter": "vertexai",
+      "browserBodyMatchesAllArms": true,
+      "nativeMatchesAllArms": true,
+      "allRolesAndContentsMatch": true,
+      "literaryRating": null
+    },
+    {
+      "case": "scene-11",
+      "order": 100000,
+      "enabledEntries": 56,
+      "priorSyntheticRepeats": 25,
+      "adapter": "makersuite",
+      "browserBodyMatchesAllArms": true,
+      "nativeMatchesAllArms": true,
+      "allRolesAndContentsMatch": true,
+      "literaryRating": null
+    },
+    {
+      "case": "scene-12",
+      "order": 100000,
+      "enabledEntries": 56,
+      "priorSyntheticRepeats": 420,
+      "adapter": "vertexai",
+      "browserBodyMatchesAllArms": true,
+      "nativeMatchesAllArms": true,
+      "allRolesAndContentsMatch": true,
+      "literaryRating": null
+    },
+    {
+      "case": "scene-01",
+      "order": 100001,
+      "enabledEntries": 61,
+      "priorSyntheticRepeats": 0,
+      "adapter": "makersuite",
+      "browserBodyMatchesAllArms": true,
+      "nativeMatchesAllArms": true,
+      "allRolesAndContentsMatch": true,
+      "literaryRating": null
+    },
+    {
+      "case": "scene-02",
+      "order": 100001,
+      "enabledEntries": 61,
+      "priorSyntheticRepeats": 25,
+      "adapter": "vertexai",
+      "browserBodyMatchesAllArms": true,
+      "nativeMatchesAllArms": true,
+      "allRolesAndContentsMatch": true,
+      "literaryRating": null
+    },
+    {
+      "case": "scene-03",
+      "order": 100001,
+      "enabledEntries": 61,
+      "priorSyntheticRepeats": 420,
+      "adapter": "makersuite",
+      "browserBodyMatchesAllArms": true,
+      "nativeMatchesAllArms": true,
+      "allRolesAndContentsMatch": true,
+      "literaryRating": null
+    },
+    {
+      "case": "scene-04",
+      "order": 100001,
+      "enabledEntries": 61,
+      "priorSyntheticRepeats": 0,
+      "adapter": "vertexai",
+      "browserBodyMatchesAllArms": true,
+      "nativeMatchesAllArms": true,
+      "allRolesAndContentsMatch": true,
+      "literaryRating": null
+    },
+    {
+      "case": "scene-05",
+      "order": 100001,
+      "enabledEntries": 61,
+      "priorSyntheticRepeats": 25,
+      "adapter": "makersuite",
+      "browserBodyMatchesAllArms": true,
+      "nativeMatchesAllArms": true,
+      "allRolesAndContentsMatch": true,
+      "literaryRating": null
+    },
+    {
+      "case": "scene-06",
+      "order": 100001,
+      "enabledEntries": 61,
+      "priorSyntheticRepeats": 420,
+      "adapter": "vertexai",
+      "browserBodyMatchesAllArms": true,
+      "nativeMatchesAllArms": true,
+      "allRolesAndContentsMatch": true,
+      "literaryRating": null
+    },
+    {
+      "case": "scene-07",
+      "order": 100001,
+      "enabledEntries": 61,
+      "priorSyntheticRepeats": 0,
+      "adapter": "makersuite",
+      "browserBodyMatchesAllArms": true,
+      "nativeMatchesAllArms": true,
+      "allRolesAndContentsMatch": true,
+      "literaryRating": null
+    },
+    {
+      "case": "scene-08",
+      "order": 100001,
+      "enabledEntries": 61,
+      "priorSyntheticRepeats": 25,
+      "adapter": "vertexai",
+      "browserBodyMatchesAllArms": true,
+      "nativeMatchesAllArms": true,
+      "allRolesAndContentsMatch": true,
+      "literaryRating": null
+    },
+    {
+      "case": "scene-09",
+      "order": 100001,
+      "enabledEntries": 61,
+      "priorSyntheticRepeats": 420,
+      "adapter": "makersuite",
+      "browserBodyMatchesAllArms": true,
+      "nativeMatchesAllArms": true,
+      "allRolesAndContentsMatch": true,
+      "literaryRating": null
+    },
+    {
+      "case": "scene-10",
+      "order": 100001,
+      "enabledEntries": 61,
+      "priorSyntheticRepeats": 0,
+      "adapter": "vertexai",
+      "browserBodyMatchesAllArms": true,
+      "nativeMatchesAllArms": true,
+      "allRolesAndContentsMatch": true,
+      "literaryRating": null
+    },
+    {
+      "case": "scene-11",
+      "order": 100001,
+      "enabledEntries": 61,
+      "priorSyntheticRepeats": 25,
+      "adapter": "makersuite",
+      "browserBodyMatchesAllArms": true,
+      "nativeMatchesAllArms": true,
+      "allRolesAndContentsMatch": true,
+      "literaryRating": null
+    },
+    {
+      "case": "scene-12",
+      "order": 100001,
+      "enabledEntries": 61,
+      "priorSyntheticRepeats": 420,
+      "adapter": "vertexai",
+      "browserBodyMatchesAllArms": true,
+      "nativeMatchesAllArms": true,
+      "allRolesAndContentsMatch": true,
+      "literaryRating": null
+    }
+  ],
+  "layout": [
+    {
+      "cssWidth": 320,
+      "panelWidth": 306,
+      "scrollWidth": 306,
+      "minControl": 44
+    },
+    {
+      "cssWidth": 375,
+      "panelWidth": 361,
+      "scrollWidth": 361,
+      "minControl": 44
+    },
+    {
+      "cssWidth": 390,
+      "panelWidth": 376,
+      "scrollWidth": 376,
+      "minControl": 44
+    },
+    {
+      "cssWidth": 1100,
+      "panelWidth": 264,
+      "scrollWidth": 264,
+      "minControl": 44
+    }
+  ],
+  "settingFieldChanges": {
+    "pause": [
+      "pause143"
+    ],
+    "restore": [
+      "anchorSize",
+      "detail143",
+      "guardMode",
+      "repairJsonMime",
+      "traceAnchor"
+    ],
+    "oldRecommendations": [
+      "experimentDetails",
+      "macro",
+      "protocolProfile"
+    ],
+    "oldBulkOff": [
+      "macro",
+      "passiveOutput",
+      "protocolProfile",
+      "shield"
+    ]
+  },
+  "hostChatLifecycle": [
+    {
+      "retry": "regenerate",
+      "requests": 2,
+      "firstSavedMarker": true,
+      "firstGuard": "echo-confirmed",
+      "firstTerminal": "STOP",
+      "firstReason": "owned-slot",
+      "retrySavedAnswer": true,
+      "retryGuard": "omitted",
+      "retryTerminal": "STOP",
+      "retryReason": "off"
+    },
+    {
+      "retry": "swipe",
+      "requests": 2,
+      "firstSavedMarker": true,
+      "firstGuard": "echo-confirmed",
+      "firstTerminal": "STOP",
+      "firstReason": "owned-slot",
+      "retrySavedAnswer": true,
+      "retryGuard": "omitted",
+      "retryTerminal": "STOP",
+      "retryReason": "off"
+    }
+  ],
+  "manualActionBytePairs": 2,
+  "staleTargetExtraCalls": 0,
+  "desktopKeyboard": {
+    "w": 299,
+    "full": 299,
+    "touch": 0
+  },
+  "host": "1.19.1",
+  "hostCommit": "82b64a45c34facbc98ff4b9f33c067d3ccab6a17",
+  "browser": "133.0.6943.0",
+  "liveCloudGenerations": 0,
+  "browserGenerationPOSTs": 182,
+  "nativeLoopbackCalls": 127,
+  "preferencesSurvivedReload": true
+}
