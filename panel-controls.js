@@ -1,4 +1,4 @@
-import { GUIDES, EFFECTS } from './setting-help.js?v=1.4.2';
+import { GUIDES, EFFECTS } from './setting-help.js?v=1.4.3';
 // DOM-only view helpers. A change writes a preference; navigation never changes a request mode.
 export function el(tag, props = {}, text = '') {
     const node = document.createElement(tag);

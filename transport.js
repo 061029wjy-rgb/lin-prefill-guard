@@ -1,5 +1,5 @@
 // Storage/UI get enums and counts only. No global hook, response rewriting or retry.
-import {protocol290, layout290, proveTail, wireKind} from './lin290.js?v=1.4.2';
+import {protocol290, layout290, proveTail, wireKind} from './lin290.js?v=1.4.3';
 
 export const TRANSPORT_LABELS=Object.freeze({
     off:'已关闭', waiting:'尚未观察到发送', sse:'已向酒馆请求流式回复', json:'已向酒馆请求整段回复',
@@ -32,7 +32,7 @@ export function risk(r){
 // Compare the remaining ST wire fields too: v1.4.1's message/parameter key was intentionally narrower.
 // Never snapshot custom headers, body-carried passwords or arbitrary extension metadata.
 const ROOTS=new Set(('type messages model stream temperature frequency_penalty presence_penalty top_p max_tokens max_completion_tokens logit_bias stop chat_completion_source n user_name char_name group_names include_reasoning reasoning_effort enable_web_search request_images request_image_resolution request_image_aspect_ratio custom_prompt_post_processing verbosity reverse_proxy proxy_password logprobs top_logprobs top_k seed use_sysprompt vertexai_auth_mode vertexai_express_project_id vertexai_region custom_url custom_include_body custom_include_headers custom_exclude_body min_p repetition_penalty top_a chat_id json_schema tools functions tool_choice mcp_servers function_call assistant_prefill').split(' '));
-function extraStamp(r){
+export function extraStamp(r){
     const fields=[];
     for(const k of Object.keys(r).sort()){
         const v=r[k];if(v===undefined||k==='messages')continue;

@@ -1,10 +1,10 @@
-import { createCoordinator } from './coordinator.js?v=1.4.2';
-import { orderProof } from './gemini4.js?v=1.4.2';
-import { planInjection, REASONS, VERSION, normalizeSettings, getLinState } from './core.js?v=1.4.2';
-import { auditPreset, captureInjection, createHistory, planReasoning, requestKey, requestMeta, recordDiagnosis } from './diagnostics.js?v=1.4.2';
-import { installObserver } from './observer.js?v=1.4.2';
-import { analyzeOutput, structureDiagnosis, textDigest } from './structure.js?v=1.4.2';
-import { createRecovery } from './recovery.js?v=1.4.2';
+import { createCoordinator } from './coordinator.js?v=1.4.3';
+import { orderProof } from './gemini4.js?v=1.4.3';
+import { planInjection, REASONS, VERSION, normalizeSettings, getLinState } from './core.js?v=1.4.3';
+import { auditPreset, captureInjection, createHistory, planReasoning, requestKey, requestMeta, recordDiagnosis } from './diagnostics.js?v=1.4.3';
+import { installObserver } from './observer.js?v=1.4.3';
+import { analyzeOutput, structureDiagnosis, textDigest } from './structure.js?v=1.4.3';
+import { createRecovery } from './recovery.js?v=1.4.3';
 
 export function createController({ getContext, getSettings, onStatus = () => {}, networkTarget = globalThis, hasDraft = () => false }) {
     const ctx = getContext();
@@ -256,7 +256,7 @@ export function createController({ getContext, getSettings, onStatus = () => {},
         if (!record?.rendered) patch(active.id, { lifecycle: '生成已结束，尚未观察到正文保存事件；检查接口记录。稍后到达的正文事件仍会更新此记录。' });
     }
     function onStop() {
-        coordinator.reset();
+        coordinator.stop();
         generating = false;
         if (active) patch(active.id, { clientStopped: true, lifecycle: '客户端报告停止；事件未区分手动停止与错误处理。' });
         active = null;
@@ -270,6 +270,7 @@ export function createController({ getContext, getSettings, onStatus = () => {},
         subscribe(requestEvent, handleRequest);
         subscribe(events.GENERATION_STARTED, lateRegistration);
         subscribe(events.MESSAGE_RECEIVED, onMessage);
+        subscribe(events.MESSAGE_EDITED, () => coordinator.invalidateFresh());
         subscribe(events.GENERATION_ENDED, onEnd);
         subscribe(events.GENERATION_STOPPED, onStop);
         subscribe(events.CHAT_CHANGED, onChatChanged);
@@ -280,6 +281,7 @@ export function createController({ getContext, getSettings, onStatus = () => {},
         getAuxPreview:()=>coordinator.peek(last?.id),
         getVisibleOutput:()=>recovered?.id===last?.id && normalizeSettings(getSettings()).enabled && normalizeSettings(getSettings()).passiveOutput?recovered?.text||'':'',
         invalidateProtocol(){coordinator.forget();},
+        invalidateFresh(){coordinator.invalidateFresh();},
         resetExperiment(){coordinator.forget();recovered=null;},
         prepareRecovery: () => recovery.prepare(),
         async runRecovery(plan, action) {

@@ -117,3 +117,8 @@
 #lin-prefill-guard-panel .lpg-main-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(9rem,100%),1fr));gap:6px;}
 #lin-prefill-guard-panel .lpg-main-actions button{margin:0;min-height:44px;}
 #lin-prefill-guard-panel :where(label,button,summary):focus-visible,#lin-prefill-guard-panel label:has(input:focus-visible){outline:2px solid var(--lpg-accent);outline-offset:2px;}
+
+#lin-prefill-guard-panel .lpg-evidence143{white-space:pre-line;line-height:1.55;font-size:.9em}
+#lin-prefill-guard-panel .lpg-main .lpg-group{margin:10px 0 12px;padding:6px 0;border:0}
+#lin-prefill-guard-panel .lpg-main .lpg-group h4{font-weight:650;margin:4px 0}
+#lin-prefill-guard-panel .lpg-main .lpg-helpbox summary,#lin-prefill-guard-panel .lpg-main select{min-height:44px}

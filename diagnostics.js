@@ -1,9 +1,10 @@
-import { family } from './lin290.js?v=1.4.2';
-import { label290 } from './coordinator.js?v=1.4.2';
-import { isGemini4Segment } from './gemini4.js?v=1.4.2';
-import { getLinState, normalizeSettings, plainText, VERSION } from './core.js?v=1.4.2';
-import { deliveryProfile } from './delivery.js?v=1.4.2';
-import { structureDiagnosis, endingDiagnosis, replySignalDiagnosis } from './structure.js?v=1.4.2';
+import {verdict,DECISIONS,ACKS} from './response-evidence.js?v=1.4.3';
+import { family } from './lin290.js?v=1.4.3';
+import { label290 } from './coordinator.js?v=1.4.3';
+import { isGemini4Segment } from './gemini4.js?v=1.4.3';
+import { getLinState, normalizeSettings, plainText, VERSION } from './core.js?v=1.4.3';
+import { deliveryProfile } from './delivery.js?v=1.4.3';
+import { structureDiagnosis, endingDiagnosis, replySignalDiagnosis } from './structure.js?v=1.4.3';
 
 export const HISTORY_KEY = 'lin_prefill_guard_history_v2';
 export const HISTORY_LIMIT = 50;
@@ -27,7 +28,13 @@ export function createHistory(getStorage = () => null) {
         try {
             const storage = getStorage();
             if (!storage) { warning = '当前分支没有账户存储，记录只保留在当前页面。'; return; }
-            storage.setItem(HISTORY_KEY, JSON.stringify(records));
+            storage.setItem(HISTORY_KEY, JSON.stringify(records.map(r=>{
+                if(r.version!==VERSION||!r.wire?.textDigest&&!r.rendered?.textDigest)return r;
+                const x={...r};
+                if(r.wire?.textDigest&&r.rendered?.textDigest)x.digestAgreement=r.wire.textDigest===r.rendered.textDigest;
+                for(const k of ['wire','rendered'])if(x[k]){x[k]={...x[k]};delete x[k].textDigest;}
+                return x;
+            })));
             warning = '';
         } catch { warning = '记录保存失败（可能空间不足）；本页记录仍可复制和导出。'; }
     }
@@ -207,6 +214,7 @@ export function responseDiagnosis(stats = {}, sent = {}) {
     // Host error handling can abort a request after reading an error frame.
     // An abort signal must not hide an already observed provider result.
     if (hasApiError(stats)) return apiErrorDiagnosis(stats);
+    if(verdict(stats)==='done-only')return '仅收到 [DONE]，没有正文帧。流结束不等于模型交付了正文；原因未知。';
     if (hasServiceRestriction(stats)) return `接口报告拦截或限制：${stats.blockReason || stats.finishReason}；不是已证实的token耗尽或网络断流。插件不能解除服务端限制，不自动续写或重试。${structureDiagnosis(stats.output) ? `附带结构问题：${structureDiagnosis(stats.output)}。` : ''}`;
     if (stats.refusal) return '接口返回了明确拒绝字段；这是拒答而非空回，插件不针对该限制自动补全或重试。';
     if (String(stats.finishReason || '').toUpperCase() === 'CONTINUATION') return `接口要求凭据续传：本段已识别文本 ${stats.visibleChars || 0} 字符；需要后端携带上游续传凭据继续同一次生成，普通酒馆“继续”会新开一轮。`;
@@ -255,6 +263,7 @@ export function recordStatus(record = {}) {
         return { label: '输出预算结束', state: 'warn' };
     if (record.clientStopped) return { label: '客户端已停止', state: 'warn' };
     if (w.aborted) return { label: '请求已中止', state: 'warn' };
+    if(verdict(w)==='done-only')return {label:'只有结束标志',state:'warn'};
     if (w.networkError) return { label: '请求失败', state: 'warn' };
     if (w.incomplete) return { label: '接口响应未完成', state: 'warn' };
     if (w.protocolMismatch || w.streamMessageEnvelope) return { label: '响应协议异常', state: 'warn' };
@@ -309,6 +318,7 @@ export function compareDelivery(record = {}) {
     const w = record.wire, saved = record.rendered?.output?.rawChars;
     if (!['normal', 'regenerate', 'swipe'].includes(record.type) || !w?.responseComplete
         || w.captureLimited || w.parseErrors || !Number.isFinite(w.visibleChars) || !Number.isFinite(saved)) return '';
+    if(typeof record.digestAgreement==='boolean'&&(!w.textDigest||!record.rendered.textDigest))return record.digestAgreement?'接收核对：当时同轮原文内容一致（未保存原文摘要值）。':'接收核对：当时两端的原文内容不同；单凭这一点不能判定原因。';
     if (w.textDigest && record.rendered.textDigest) {
         return w.textDigest === record.rendered.textDigest
             ? '接收核对：本次解析文本与酒馆保存原文的 SHA-256 一致；文本一致仍不代表剧情完整，显示正则也可能改变显示效果。'
@@ -330,6 +340,7 @@ export function formatRecord(record, records = []) {
             '辅助位置：'+(e.location||'无')+'；新增辅助文本 '+(e.addedChars||0)+' 字符；请求净增 '+(e.addedBytes||0)+' 字节；没有用字符或字节估算 token。',
             '泄漏：'+(w.anchorEcho===true?'检测到模型照抄完整辅助标识；可关闭实验，原回复未清洗。':w.anchorEcho===false?'未检测到完整标识':'无可用证据'),
         ];
+        if(e.v143)lines.push('本版标准：'+(DECISIONS[e.v143.guard]||'未核实')+'；请求格式：'+(DECISIONS[e.v143.mime]||'未核实')+'；传输锚：'+(DECISIONS[e.v143.anchor]||'未核实')+'；回传：'+(ACKS[e.v143.ack]||'未核实'));
         if(e.profile!=null)lines.push('协议模式：'+(e.profile==='standard'?'标准':'关闭')+'；浏览器接收格式：'+label290(e.transport)+'；Google 联网：'+(e.search?'开':'关')+'；纯搜索承接修复：'+(e.bodyStrategy==='search-tail'?'已执行':'无')+'。');
         if(w.sampleEcho===true)lines.push('返回文本含完整样本号；如不希望出现，可关闭独立随机宏。未修改模型回复。');
         if(record.wire)lines.push(responseDiagnosis(w,record.request),'HTTP '+(w.httpStatus??'未知')+'；结束 '+(w.finishReason||'未知')+(w.doneWithoutReason?'（有 DONE，缺结束原因）':'')+'；可见文本字段 '+(w.visibleChars??'未知')+' 字符',

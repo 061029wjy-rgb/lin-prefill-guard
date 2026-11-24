@@ -1,5 +1,5 @@
 // The 2.9 adapter reads a preset; it never writes a prompt, a message, or a setting.
-import { LIN_PROMPT_ID, LIN_CONFIRM_ID } from './gemini4.js?v=1.4.2';
+import { LIN_PROMPT_ID, LIN_CONFIRM_ID } from './gemini4.js?v=1.4.3';
 
 export const GROUPS = ['100000','100001'];
 const TEXT_TYPES = ['normal','regenerate','swipe'];

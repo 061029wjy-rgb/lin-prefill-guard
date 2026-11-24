@@ -1,7 +1,7 @@
 // Owned input experiment. No macros execute on source text. A request sample is not a credential.
-import {systemKey} from './lin290.js?v=1.4.2';
+import {systemKey} from './lin290.js?v=1.4.3';
 const encoder=new TextEncoder();
-export {drawSample} from './sample-session.js?v=1.4.2';
+export {drawSample} from './sample-session.js?v=1.4.3';
 export function attachment(mode,sample) {
     if(mode==='deep')return JSON.stringify({lin:{format:1,...(sample?{sample}: {})}});
     if(mode==='standard')return 'LPG format=1'+(sample?' sample='+sample:'');

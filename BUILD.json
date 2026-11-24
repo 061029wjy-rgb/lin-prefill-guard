@@ -1,18 +1,18 @@
 {
   "extension": "Lin 预填充助手",
-  "version": "1.4.2",
-  "build": "LPG-1.4.2.1",
-  "releaseDate": "2026-11-23",
-  "sourceCommit": "7aed2c68a2f633a571dc79c765f27ca374c00828",
-  "gitTree": "bfd7a00dd5fbb7843d2fd8fa8e0c9c20d6b10bae",
-  "baseVersion": "1.4.1",
-  "baseZipSha256": "8faeec0991c94ec6810828375a6e36acd7616b6151dfaf5ae88be955b24e3637",
-  "baseCommit": "a179bd7d5276be9d476e7556c98e35fa5e19334d",
+  "version": "1.4.3",
+  "build": "LPG-1.4.3.1",
+  "releaseDate": "2026-11-24",
+  "sourceCommit": "e048a70be260e0728450a8530f198610729e63a6",
+  "gitTree": "af462700cd32ba8ef998af5af2199e6e0ae03c68",
+  "baseVersion": "1.4.2",
+  "baseCommit": "7aed2c68a2f633a571dc79c765f27ca374c00828",
+  "baseZipSha256": "a60b5ada76202e315772b7a18a040ade66f74f2b4de0fc1160a1596c8633880a",
   "publicBaseline": "475c555bca1831c402554b1262c762ce85911096",
   "sourceBundle": {
-    "file": "provenance/source-1.4.2.bundle",
+    "file": "provenance/source-1.4.3.bundle",
     "requiresCommit": "475c555bca1831c402554b1262c762ce85911096",
-    "sha256": "8dad23624969e6a8ffbde8b14065b131725d202348d7a5938328397f6922f333"
+    "sha256": "180edc1f940533a3aba28f101a9e3fd5658e2b2738d455cb18c4b06ea81fe861"
   },
-  "validation": "docs/VALIDATION-1.4.2.md"
+  "validation": "docs/VALIDATION-1.4.3.md"
 }
