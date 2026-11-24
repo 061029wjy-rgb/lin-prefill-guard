@@ -1,8 +1,8 @@
-import { identify291, layout291 } from './lin291.js?v=1.3.1';
-import { gemini4Target, lin282Layout } from './gemini4.js?v=1.3.1';
-import { DEFAULT_PREFILL, DEFAULT_NUDGE, SETTINGS_KEY, VERSION, REASONS, normalizeSettings, migrateSettings } from './core.js?v=1.3.1';
-import { createController } from './controller.js?v=1.3.1';
-import { formatRecord, recordStatus } from './diagnostics.js?v=1.3.1';
+import { identify291, layout291 } from './lin291.js?v=1.3.2';
+import { gemini4Target, lin282Layout } from './gemini4.js?v=1.3.2';
+import { DEFAULT_PREFILL, DEFAULT_NUDGE, SETTINGS_KEY, VERSION, REASONS, normalizeSettings, migrateSettings } from './core.js?v=1.3.2';
+import { createController } from './controller.js?v=1.3.2';
+import { formatRecord, googleThinkingStatus, recordStatus } from './diagnostics.js?v=1.3.2';
 
 const INSTANCE_KEY = Symbol.for('lin-prefill-guard.instance');
 let controller;
@@ -62,12 +62,14 @@ function updateStatus(view) {
     const status = panel.querySelector('.lpg-status');
     const lines = [];
     if (state.enabled && state.requestMode === 'observe') lines.push('原样诊断：保留预设的原承接、CoT、角色权限和输出顺序；不追加插件提示或调整思考参数。');
-    if (state.enabled && state.requestMode === 'gemini4') lines.push('承接兼容：核对 Lin 2.9.1 或 2.8.2 的原承接和确认。顺序正确就原样发送，不追加文字，不更改思考或输出上限。');
-    if (state.enabled && state.requestMode === 'gemini4-story') lines.push('Vertex 正文承接：2.9.1 尾部自带「【生成交接】」时，整条确认留在最后，不再加短确认；不改变模型的思考等级。');
+    if (state.enabled && state.requestMode === 'gemini4') lines.push('承接兼容会核对 Lin 的两条原文。Carbon、Argon 通过对话历史接收承接，最后一条为 user。');
+    if (state.enabled && state.requestMode === 'gemini4-story') lines.push('Vertex 正文承接会把 2.9.1 自带的「【生成交接】」留在最后。思考档位取自当前预设。');
     if (!state.enabled) lines.push('扩展当前关闭，下次请求不注入。以下为最近记录。');
     if (last) {
         if (last.at) lines.push(`最近检查：${new Date(last.at).toLocaleTimeString()} · ${last.type || '未知类型'}`);
         lines.push(last.explanation);
+        const thinking = googleThinkingStatus(last);
+        if (thinking) lines.push(thinking);
         if (['gemini4','gemini4-story'].includes(last.requestMode)) {
             if (last.dispatch?.label) lines.push(last.dispatch.label);
             else if (last.gemini4) lines.push('只看到组装事件，尚未核对浏览器发送。');

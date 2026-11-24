@@ -1,10 +1,10 @@
 /** Pure request planning. This module never sends requests or changes chat history. */
-import { deliveryProfile, deliveryCue } from './delivery.js?v=1.3.1';
-import { identify291, plan291 } from './lin291.js?v=1.3.1';
-export const VERSION = '1.3.1';
+import { deliveryProfile, deliveryCue } from './delivery.js?v=1.3.2';
+import { identify291, plan291 } from './lin291.js?v=1.3.2';
+export const VERSION = '1.3.2';
 export const SETTINGS_KEY = 'lin_prefill_guard_v1';
-import { LIN_PROMPT_ID, planGemini4 } from './gemini4.js?v=1.3.1';
-import { planStoryHandoff } from './handoff.js?v=1.3.1';
+import { LIN_PROMPT_ID, planGemini4 } from './gemini4.js?v=1.3.2';
+import { planStoryHandoff } from './handoff.js?v=1.3.2';
 export { LIN_PROMPT_ID };
 export const DEFAULT_PREFILL = '已定位本轮任务：以聊天记录中真实用户的最新请求为准。续写承接最后有效正文，修订处理指定范围，戏外问题直接回答。沿用已启用的视角、角色控制和输出格式；下一条回复交付所需结果，不重演已完成的情节，不以接收确认或写作计划代替结果。';
 export const REGENERATE_PREFILL = '已定位本轮任务：重新回答聊天记录中真实用户的最新请求。以该请求之前的有效剧情为起点；被替换或未选中的回复不作为已发生剧情，不从其结尾续写。沿用已启用的视角、角色控制和输出格式，交付本轮完整的新回答。';
@@ -37,6 +37,7 @@ export const REASONS = Object.freeze({
     'g291-other-tail': '当前启用顺序还安排了其他尾部提示；保留你的布局，不移动或加短确认。',
     'g291-anchors': '没有在末尾唯一匹配到两条独立的 2.9.1 原文；条目缺失、合并或重复时不拆不补。',
     'g291-protected': '含非纯文本、签名、缓存、续传或多候选结构；本轮保留原请求。',
+    'g291-unsupported-prefix': '本次请求带有回复前缀字段。Carbon 和 Argon 的 Google 接口不接受这种前缀，请检查添加该字段的设置。',
     'g4-handoff': '已核对 Lin 原条目，规则移至原 assistant 承接前，末尾为短 user 确认；本次请求取消了强制最大思考。',
     'g4-other': '此连接或模型名不在当前预设的已识别范围；请求保持原样。',
     'g4-not-lin282': '未确认 Lin 2.8.2 或 2.9.1 的独立承接和尾部确认；本次保持原样。',
@@ -58,7 +59,7 @@ export const REASONS = Object.freeze({
     quiet: '后台生成或连接测试，已跳过。',
     impersonate: '用户代写模式，已跳过。',
     'continue-disabled': '继续补全默认沿用酒馆原有行为。',
-    'native-prefill': '检测到原生预填充，已跳过以免叠加。',
+    'native-prefill': '检测到回复前缀配置，保留现有请求。是否支持该字段取决于当前接口。',
     tools: '工具调用请求，已跳过以保持调用协议。',
     structured: '结构化输出请求，已跳过以保持指定格式。',
     'empty-text': '承接提示或执行提示为空，未修改。',

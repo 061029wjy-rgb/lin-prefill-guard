@@ -132,7 +132,7 @@ test('actual event and fetch boundary: same-object reentry, mixed legacy prefere
             const r=req(p,true);r.model='gemini-4-argon';r.reasoning_effort='high';const snap=JSON.stringify(p);
             bus.get('r')(r);const a=r.messages;bus.get('r')(r);assert.equal(r.messages,a);assert.equal(r.reasoning_effort,'high');
             r.messages.splice(1,0,note);await net.fetch('/api/backends/chat-completions/generate',{method:'POST',body:JSON.stringify(r)});await ctl.idle();
-            const rec=ctl.snapshot().last;assert.equal(rec.version,'1.3.1');assert.equal(rec.reason,mode==='gemini4-story'?'g291-handoff':'g291-restored');
+            const rec=ctl.snapshot().last;assert.equal(rec.version,VERSION);assert.equal(rec.reason,mode==='gemini4-story'?'g291-handoff':'g291-restored');
             assert.equal(rec.dispatch.linOrder,'cue-before-user');assert.equal(rec.dispatch.correlation,'companion-front-note');
             assert.equal(rec.lin291.npcEnabled,false);assert.equal(rec.adjustment,null);assert.equal(count,1);
             assert.equal(sent.enable_web_search,true);assert.equal(sent.max_tokens,mode==='gemini4-story'?32768:16384);assert.equal(JSON.stringify(p),snap);

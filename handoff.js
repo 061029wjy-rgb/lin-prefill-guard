@@ -1,5 +1,5 @@
 // A semantic handoff for the verified Lin 2.8.2 pair, not a provider prefix.
-import { lin282Layout, plainAnchor, orderProof } from './gemini4.js?v=1.3.1';
+import { lin282Layout, plainAnchor, orderProof } from './gemini4.js?v=1.3.2';
 
 export const ACK = '按上一条承接完成本轮，从预设规定的第一项开始。';
 export const MAX_PARAGRAPH = [

@@ -24,8 +24,9 @@ def main():
     st=Path(os.environ['LPG_ST_PATH']); presetbytes=Path(os.getenv('LIN291_HOST_PRESET') or os.environ['LIN291_PRESET']).read_bytes()
     digest=hashlib.sha256(presetbytes).hexdigest()
     hashes=['79425364f929723df789af37ddd9f9806db9e845ee14e27a4f919de8683c4f70','2cdd746b2e6e2a1197c51e010fdacdd1db750e5eaede1c9a7237fcc78ee7e2e8']
-    assert digest in hashes, 'expected one of the supplied 2.9.1 exports'
-    revised=digest==hashes[1]
+    low_digest='c7f28593dcb37d40c7967b8cc7c2056aa1641fe532755b57c8422a80ed36fba5'
+    assert digest in [*hashes,low_digest], 'expected one of the verified 2.9.1 exports'
+    revised=digest!=hashes[0]
     p=json.loads(presetbytes);defs={e['identifier']:e for e in p['prompts']};cue={'role':'assistant','content':defs[C]['content']};user={'role':'user','content':defs[U]['content']}
     out=Path(os.environ['LPG_EVIDENCE']);out.mkdir(exist_ok=True,parents=True)
     companion=os.getenv('LPG_COMPANION_ZIP');wire=[];rows=[];groups=[];full=[]
@@ -99,6 +100,8 @@ def main():
                                 expected['messages']=[*ms[:-2],user,cue,{'role':'user','content':ACK}]
                             elif reason in ('g291-restored','g291-authored-restored'):expected['messages']=[*ms[:-2],cue,user]
                             if opts.get('cap'):expected['max_tokens']=32768
+                            if digest==low_digest and opts.get('mode')!='observe' and (opts.get('type')!='continue' or ms[-1]['role']=='user'):
+                                expected['lin_gemini4_low_thinking']=True
                             assert w==expected, (opts,'unexpected field or message change', sorted(k for k in w.keys()|expected.keys() if (k in w)!=(k in expected) or w.get(k)!=expected.get(k)))
                             up=peer.payloads[-1];contents=up['contents']
                             tags=[part.get('text','') for item in contents for part in item.get('parts',[])]
@@ -123,7 +126,7 @@ def main():
                         assert raw['messages'][-len(expected_tail):]==expected_tail,row
                         row['companionNotePresent']=any(m['role']=='system' and isinstance(m['content'],str) and m['content'].startswith('〔人性阴暗面/情绪/随机性放大·角色演出〕') for m in raw['messages'])
                         full.append(row)
-                    report={'plugin':'1.3.1','presetSHA256':digest,'host':json.loads((st/'package.json').read_text())['version'],'browser':browser.version,'realCloudCalls':0,
+                    report={'plugin':json.loads((ext/'manifest.json').read_text())['version'],'presetSHA256':digest,'host':json.loads((st/'package.json').read_text())['version'],'browser':browser.version,'realCloudCalls':0,
                         'testRelay':'direct-shaped browser POST captured, test transport then set the isolated server destination to the loopback model fixture',
                         'companionLoaded':bool(companion),'groups':groups,'scenarios':rows,'fullGeneration':full,'generationPOSTs':len(wire),'localModelCalls':len(peer.payloads),'uiSelfTest291':True}
                     (out/'host-291.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')

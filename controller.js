@@ -1,9 +1,10 @@
-import { orderProof } from './gemini4.js?v=1.3.1';
-import { planInjection, REASONS, VERSION, normalizeSettings, getLinState } from './core.js?v=1.3.1';
-import { auditPreset, captureInjection, createHistory, planReasoning, requestKey, requestMeta, recordDiagnosis } from './diagnostics.js?v=1.3.1';
-import { installObserver } from './observer.js?v=1.3.1';
-import { analyzeOutput, structureDiagnosis, textDigest } from './structure.js?v=1.3.1';
-import { createRecovery } from './recovery.js?v=1.3.1';
+import { orderProof } from './gemini4.js?v=1.3.2';
+import { directGoogle4 } from './lin291.js?v=1.3.2';
+import { planInjection, REASONS, VERSION, normalizeSettings, getLinState } from './core.js?v=1.3.2';
+import { auditPreset, captureInjection, createHistory, planReasoning, requestKey, requestMeta, recordDiagnosis } from './diagnostics.js?v=1.3.2';
+import { installObserver } from './observer.js?v=1.3.2';
+import { analyzeOutput, structureDiagnosis, textDigest } from './structure.js?v=1.3.2';
+import { createRecovery } from './recovery.js?v=1.3.2';
 
 export function createController({ getContext, getSettings, getOrderId = () => null, onStatus = () => {}, networkTarget = globalThis, hasDraft = () => false }) {
     const ctx = getContext();
@@ -16,6 +17,14 @@ export function createController({ getContext, getSettings, getOrderId = () => n
     const currentOrder = preset => { try { return getOrderId(preset) ?? null; } catch { return null; } };
     const requestRecords = new WeakMap();
     const committedHandoffs = new WeakMap();
+    const lowThinkingRequests = new WeakSet();
+    function syncLowThinking(request, forward) {
+        if (forward && !Object.hasOwn(request, 'lin_gemini4_low_thinking')) {
+            if (Reflect.set(request, 'lin_gemini4_low_thinking', true)) lowThinkingRequests.add(request);
+        } else if (!forward && lowThinkingRequests.has(request)) {
+            if (Reflect.deleteProperty(request, 'lin_gemini4_low_thinking')) lowThinkingRequests.delete(request);
+        }
+    }
     const history = createHistory(() => getContext().accountStorage);
     const pending = [];
     const unassociated = record => record?.origin === 'unassociated' || record?.reason === 'unmatched-dispatch';
@@ -58,11 +67,28 @@ export function createController({ getContext, getSettings, getOrderId = () => n
             const activeOrderId = currentOrder(preset);
             const result = planInjection(request, settings, { preset, ownedMessages, activeOrderId });
             const prevHandoff = request && committedHandoffs.get(request);
-            if (prevHandoff?.lin291 && settings.enabled !== false && result.lin291 &&
+            const repeat291 = prevHandoff?.lin291 && settings.enabled !== false && result.lin291 &&
                 prevHandoff.mode === normalizeSettings(settings).requestMode && prevHandoff.key === requestKey(request) &&
                 prevHandoff.meta === JSON.stringify([result.lin291.identity,result.lin291.order,result.lin291.cueEnabled,result.lin291.confirmEnabled,result.lin291.npcEnabled,result.lin291.closureEnabled,result.lin291.authoredHandoff]) &&
                 (['g291-ready','g291-authored-ready'].includes(result.reason) || (prevHandoff.story && result.reason === 'g291-anchors')) &&
-                prevHandoff.cap === request.max_tokens && orderProof(request.messages, prevHandoff.witness)==='cue-before-user') return;
+                prevHandoff.cap === request.max_tokens && orderProof(request.messages, prevHandoff.witness)==='cue-before-user';
+            // A stock host ignores this local flag. The optional host patch checks
+            // the source, model and both settings again before building the Google body.
+            const forwardLow = (result.orderWitness || result.plainContinue || repeat291)
+                && result.identification === 'Lin 2.9.1' && directGoogle4(result.gemini4)
+                && request.model === result.gemini4.model
+                && !(request.chat_completion_source === 'vertexai' && request.vertexai_auth_mode === 'proxy')
+                && preset.show_thoughts === false && preset.reasoning_effort === 'low'
+                && request.include_reasoning === false && request.reasoning_effort === 'low';
+            if (repeat291) {
+                syncLowThinking(request, forwardLow);
+                const meta = requestMeta(request);
+                if (priorRef && JSON.stringify(meta) !== JSON.stringify(priorRef.request)) {
+                    priorRef.request = meta;
+                    patch(priorRef.id, { request: meta });
+                }
+                return;
+            }
             if (prevHandoff && !prevHandoff.lin291 && settings.enabled !== false && settings.requestMode === 'gemini4-story' &&
                 prevHandoff.key === requestKey(request) && prevHandoff.cap === request.max_tokens) return;
             const lin = result.lin291 ? {known:result.identification==='Lin 2.9.1', active:result.lin291.cueEnabled} : getLinState(preset);
@@ -80,10 +106,15 @@ export function createController({ getContext, getSettings, getOrderId = () => n
             }
             if (adjustment && !writable('reasoning_effort')) adjustment = null;
             // Finish all fallible planning/serialization before changing the host payload.
-            const planned = result.changed || adjustment || cap ? { ...request,
+            const addLow = forwardLow && !Object.hasOwn(request, 'lin_gemini4_low_thinking') && writable('lin_gemini4_low_thinking');
+            const removeLow = !forwardLow && lowThinkingRequests.has(request)
+                && Object.getOwnPropertyDescriptor(request, 'lin_gemini4_low_thinking')?.configurable;
+            const planned = result.changed || adjustment || cap || addLow || removeLow ? { ...request,
+                ...(addLow ? {lin_gemini4_low_thinking:true} : {}),
                 ...(cap ? {max_tokens:cap.after} : {}),
                 ...(result.changed ? { messages: result.messages } : {}),
                 ...(adjustment ? { reasoning_effort: adjustment.after } : {}) } : request;
+            if (removeLow) delete planned.lin_gemini4_low_thinking;
             const key = requestKey(planned);
             const prior = priorRef && (history.list().find(r => r.id === priorRef.id) || priorRef);
             const report = {
@@ -116,6 +147,7 @@ export function createController({ getContext, getSettings, getOrderId = () => n
                 report.warnings = report.warnings.filter(x => !x.startsWith('未识别到 Lin 承接条目'));
                 report.warnings.push('本次通过实际待发的完整 Lin2.4 条目识别；设置读取不完整，无法完成全部预设自查。');
             }
+            syncLowThinking(request, addLow || (forwardLow && request?.lin_gemini4_low_thinking === true));
             if (['quiet', 'impersonate'].includes(result.type)) { lastSkip = report; publish(); return; }
             if (!normalizeSettings(settings).enabled) { publish(); return; }
             if (result.changed) {

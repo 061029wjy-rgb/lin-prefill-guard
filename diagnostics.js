@@ -1,8 +1,8 @@
-import { identify291, layout291 } from './lin291.js?v=1.3.1';
-import { isGemini4Segment } from './gemini4.js?v=1.3.1';
-import { getLinState, normalizeSettings, plainText, VERSION } from './core.js?v=1.3.1';
-import { deliveryProfile } from './delivery.js?v=1.3.1';
-import { structureDiagnosis, endingDiagnosis, replySignalDiagnosis } from './structure.js?v=1.3.1';
+import { directGoogle4, identify291, layout291 } from './lin291.js?v=1.3.2';
+import { isGemini4Segment } from './gemini4.js?v=1.3.2';
+import { getLinState, normalizeSettings, plainText, VERSION } from './core.js?v=1.3.2';
+import { deliveryProfile } from './delivery.js?v=1.3.2';
+import { structureDiagnosis, endingDiagnosis, replySignalDiagnosis } from './structure.js?v=1.3.2';
 
 export const HISTORY_KEY = 'lin_prefill_guard_history_v2';
 export const HISTORY_LIMIT = 50;
@@ -61,6 +61,8 @@ export function requestMeta(request = {}) {
         stopCounts: { stop: stopCount(request.stop), stopSequences: stopCount(request.stopSequences),
             generationConfig: stopCount(request.generationConfig?.stopSequences) },
         reasoningEffort: String(request.reasoning_effort || 'auto').slice(0, 30),
+        includeReasoning: typeof request.include_reasoning === 'boolean' ? request.include_reasoning : null,
+        ...(request.lin_gemini4_low_thinking === true ? { lowThinkingRequested: true } : {}),
         webSearch: request.enable_web_search === true,
         messageCount: request.messages?.length || 0,
         inputTextChars: Array.isArray(request.messages) ? request.messages.reduce((n, m) => n + (typeof m?.content === 'string'
@@ -283,6 +285,7 @@ export function recordStatus(record = {}) {
     if (w.responseComplete && !w.finishReason) return { label: '结束原因未知', state: 'warn' };
     if (w.finishReason) return { label: '接口已结束·正文待核', state: 'idle' };
     if (record.dispatch) return { label: '等待结束证据', state: 'idle' };
+    if (record.request?.lowThinkingRequested) return { label: '已组装低档请求', state: 'idle' };
     return { label: ['g291-ready','g291-authored-ready'].includes(record.reason) && !record.applied ? '已核对·保持原样' : record.applied ? '已组装' : '未注入', state: 'idle' };
 }
 
@@ -325,6 +328,24 @@ export function compareDelivery(record = {}) {
     return `接收核对：接口 ${w.visibleChars} 字符，保存原文 ${saved} 字符，长度不一致。可能涉及保存处理、正则转换或事件关联，需要核对；不能直接归因于模型截断。`;
 }
 
+export function googleThinkingStatus(record) {
+    if (!directGoogle4(record?.gemini4)) return '';
+    const posted = record.dispatch?.request;
+    const meta = posted || record.request;
+    if (!meta || meta.model !== record.gemini4.model || meta.source !== record.gemini4.source) return '';
+    const summary = meta.includeReasoning === false ? '关' : meta.includeReasoning === true ? '开' : '未记录';
+    const status = [`Google 原生思考 · ${posted ? '浏览器发送' : '酒馆组装'}档位 ${meta.reasoningEffort || '未记录'}，返回摘要${summary}。`];
+    if (meta.lowThinkingRequested && posted && record.wire?.hostLowThinking) status.push('酒馆后端已组装 LOW 和 includeThoughts=false。');
+    else if (meta.lowThinkingRequested && posted && record.wire) status.push('未收到酒馆后端回执。原版 1.19.1 需安装包内转发补丁。');
+    if (record.wire?.recognized) {
+        const usage = Number.isFinite(record.wire.thoughtTokens) ? record.wire.thoughtTokens : '未提供';
+        const parts = record.wire.output;
+        status.push(`已观测用量 ${usage} token，原生摘要 ${record.wire.reasoningChars ?? '未记录'} 字符` +
+            (Number.isFinite(parts?.cotChars) ? `，正文内 Lin_CoT ${parts.cotChars} 字符。` : '。'));
+    }
+    return status.join(' ');
+}
+
 export function formatRecord(record, records = []) {
     if (!record) return '尚无记录。正常发送一条消息后可在这里查询。';
     const lines = [`记录 ${record.id} · v${record.version || VERSION}`, `时间：${record.at}`, `类型：${record.type} · 模型：${record.request?.model || '未提供'}`, `组装：${record.explanation}`, `发送：${record.dispatch?.label || '未观察到浏览器发送，或未开启网络取证'}`];
@@ -334,7 +355,7 @@ export function formatRecord(record, records = []) {
     const v291=record.lin291;
     if(record.requestMode){
         const family=v291 && v291.identity!=='conflict'?'Lin 2.9.1':(/^Lin 2\.[89]\.[\d]+$/.test(record.identification||'')?record.identification:
-            (record.version!=='1.3.1' && /^1\.[23]\./.test(record.version||''))?'Lin 2.8.2':'预设待核对');
+            (record.version==='1.3.0' || /^1\.2\./.test(record.version||''))?'Lin 2.8.2':'预设待核对');
         const mode=record.requestMode==='observe'?'原样诊断（不改请求）':record.requestMode==='gemini4-story'?'Vertex 正文承接':record.requestMode==='enhance'?(v291?'保留 2.9.1 原文（已跳过旧版增强）':'承接增强（旧版行为）'):'Gemini 4 承接兼容';
         lines.push('请求处理：'+mode+(['gemini4','gemini4-story'].includes(record.requestMode)?' · '+family:''));
     }
@@ -345,6 +366,9 @@ export function formatRecord(record, records = []) {
         if (v291.authoredHandoff) lines.push('尾部确认含预设自己的「【生成交接】」；实际是否在末尾，以本条“发送”核对为准。');
     }
     if (record.gemini4) lines.push('适配目标：' + record.gemini4.model + (record.gemini4.indirect ? '（按连接别名识别，实际后端未知）' : '（按酒馆连接识别）'));
+    if (directGoogle4(record.gemini4)) lines.push('Google 回复前缀不受支持。Lin 承接位于消息历史中。');
+    const thinking = googleThinkingStatus(record);
+    if (thinking) lines.push(thinking);
     if (isGemini4Segment(record)) lines.push('此响应为上游分段，需要由后端在原请求上携带续传凭据。' + (record.wire.continuationTokenSeen ? '浏览器看到了凭据字段，插件不保存或重发其值。' : '浏览器未确认收到凭据。'));
     if (repeatedReplyEvidence(record, records)) lines.push(repeatedReplyEvidence(record, records));
     if (record.origin === 'unassociated' || record.reason === 'unmatched-dispatch') lines.push('归属：未关联请求（可能来自后台任务；不自动归入当前正文生成）。');

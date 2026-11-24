@@ -39,7 +39,13 @@ test('actual 1.2.5 feedback: three short replies are flagged; helper calls stay 
         assert.equal(records.length, 50); assert.equal(story.length, 25);
         const short = story.filter(r => shortReplyEvidence(r));
         assert.deepEqual(short.map(r => r.wire.visibleChars).sort((a, b) => a - b), [92, 176, 205]);
-        assert.ok(short.every(r => recordStatus(r).label === '短回复·请核对'));
+        const stopped = short.filter(r => r.wire.finishReason === 'STOP');
+        assert.deepEqual(stopped.map(r => r.wire.visibleChars).sort((a,b) => a-b), [92,176]);
+        assert.ok(stopped.every(r => recordStatus(r).label === '短回复·请核对'));
+        const compact = short.find(r => r.wire.visibleChars === 205);
+        assert.equal(compact.wire.finishReason, undefined);
+        assert.equal(compact.wire.frames, 2);
+        assert.equal(recordStatus(compact).label, '短流·原因未知');
         assert.ok(story.every(r => r.wire.visibleChars === r.rendered.chars));
         const helper = records.filter(r => r.request?.model === 'deepseek-flash');
         assert.equal(helper.length, 25); assert.ok(helper.every(r => r.reason === 'unmatched-dispatch' && !r.rendered));

@@ -1,7 +1,7 @@
 // Compatibility branch for the user's Lin 2.9.1 preset. All returned messages are
 // the host's original objects except the opt-in 1.3 short user acknowledgement.
-import { LIN_PROMPT_ID, LIN_CONFIRM_ID, gemini4Target, plainAnchor, fingerprint } from './gemini4.js?v=1.3.1';
-import { ACK } from './handoff.js?v=1.3.1';
+import { LIN_PROMPT_ID, LIN_CONFIRM_ID, gemini4Target, plainAnchor, fingerprint } from './gemini4.js?v=1.3.2';
+import { ACK } from './handoff.js?v=1.3.2';
 
 export const NPC291 = 'b62baac5-e695-5ce5-899b-edc7989babc8';
 const CLOSURE291 = '99dd9277-7d27-40fb-972f-a009ae4983e9';
@@ -73,8 +73,17 @@ export function layout291(preset={}, type='normal', activeId=null, signature=ide
     return readings[0].issue ? fail(readings[0].issue,meta) : {cue,confirm,meta};
 }
 
-function risk291(r,preset){
-    if([r.assistant_prefill,preset.assistant_prefill].some(v=>typeof v==='string'&&v.trim()) || r.messages.some(m=>m?.prefix===true))return 'native-prefill';
+export function directGoogle4(target) {
+    return !!target && !target.indirect && ['makersuite', 'vertexai'].includes(target.source)
+        && ['gemini-4-carbon', 'gemini-4-argon'].includes(target.model);
+}
+
+function risk291(r,preset,target){
+    const hasPrefix = v => typeof v === 'string' && !!v.trim();
+    if (hasPrefix(r.assistant_prefill) || r.messages.some(m => m?.prefix === true))
+        return directGoogle4(target) ? 'g291-unsupported-prefix' : 'native-prefill';
+    // ST only sends the preset's assistant_prefill field on its Claude route.
+    if (!directGoogle4(target) && hasPrefix(preset.assistant_prefill)) return 'native-prefill';
     if(r.json_schema || (r.response_format&&r.response_format.type!=='text') || r.generationConfig?.responseSchema || r.generationConfig?.responseJsonSchema ||
         (r.generationConfig?.responseMimeType && r.generationConfig.responseMimeType!=='text/plain'))return 'structured';
     if([r.tools,r.functions,r.mcp_servers].some(x=>x!=null&&(!Array.isArray(x)||x.length>0)) ||
@@ -100,8 +109,9 @@ export function plan291(r,preset,type,settings,activeId,signature) {
     if(settings.requestMode==='observe')return done('observe-only');
     if(l.reason)return done(l.reason);
     if(!target)return done('g4-other');
-    if(type==='continue')return done('g4-continue');
-    const risk=risk291(r,preset);if(risk)return done(risk);
+    const risk=risk291(r,preset,target);
+    if(type==='continue')return done('g4-continue',{plainContinue:!risk && ms.at(-1)?.role==='user'});
+    if(risk)return done(risk);
     const end=ms.length-1, a=l.cue, u=l.confirm;
     if(end<2)return done('g291-anchors');
     const exact=(m,p)=>m.role===p.role && plainAnchor(m)===p.content;

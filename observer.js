@@ -1,5 +1,5 @@
 /** Read-only observation of ST's single chat endpoint. Never retries or rewrites a response. */
-import { analyzeOutput, textDigest } from './structure.js?v=1.3.1';
+import { analyzeOutput, textDigest } from './structure.js?v=1.3.2';
 const textBuffers = new WeakMap();
 const textValue = value => typeof value === 'string' ? value : Array.isArray(value)
     ? value.filter(p => !p?.thought && p?.type !== 'thinking').map(p => typeof p?.text === 'string' ? p.text : '').join('') : '';
@@ -49,7 +49,13 @@ export function addResponseData(stats, data) {
         const message = choice.delta || choice.message || {};
         if (!choice.delta && choice.message) stats.messageEnvelopes = (stats.messageEnvelopes || 0) + 1;
         if (message.content !== undefined || choice.text !== undefined) observeText(stats, message.content ?? choice.text, !choice.delta && !!choice.message);
-        stats.reasoningChars += chars(message.reasoning_content ?? message.reasoning);
+        const summary = message.reasoning_content ?? message.reasoning;
+        if (!candidate) {
+            // ST can wrap Google parts alongside an already flattened reply.
+            const parts = !choice.delta && Array.isArray(data.responseContent?.parts)
+                ? data.responseContent.parts.filter(part => part?.thought === true) : [];
+            stats.reasoningChars += parts.length ? parts.reduce((sum, part) => sum + chars(part.text), 0) : chars(summary);
+        }
         if (message.refusal) stats.refusal = true;
         if (message.tool_calls?.length || message.function_call) stats.toolCalls = true;
         if (choice.finish_reason) stats.finishReason = safeCode(choice.finish_reason);
@@ -102,6 +108,7 @@ export async function inspectResponse(response, { maxBytes = MAX_BYTES, timeoutM
     const stats = { httpStatus: response.status, contentType, expectedStream,
         visibleChars: 0, reasoningChars: 0, recognized: false, parseErrors: 0,
         receivedBytes: 0, networkReads: 0, maxGapMs: 0, transport: 'unknown', frames: 0, doneMarker: false, responseComplete: false };
+    if (response.headers.get('x-lin-gemini-thinking') === 'low-no-summary') stats.hostLowThinking = true;
     const retry = Number(response.headers.get('retry-after'));
     if (response.headers.has('retry-after') && Number.isFinite(retry) && retry >= 0 && retry <= 86400) stats.retryAfterSeconds = retry;
     if (!response.body) { stats.responseComplete = true; stats.output = analyzeOutput(''); return stats; }
