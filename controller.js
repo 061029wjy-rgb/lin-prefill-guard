@@ -1,17 +1,19 @@
-import { orderProof } from './gemini4.js?v=1.3.0';
-import { planInjection, REASONS, VERSION, normalizeSettings, getLinState } from './core.js?v=1.3.0';
-import { auditPreset, captureInjection, createHistory, planReasoning, requestKey, requestMeta, recordDiagnosis } from './diagnostics.js?v=1.3.0';
-import { installObserver } from './observer.js?v=1.3.0';
-import { analyzeOutput, structureDiagnosis, textDigest } from './structure.js?v=1.3.0';
-import { createRecovery } from './recovery.js?v=1.3.0';
+import { orderProof } from './gemini4.js?v=1.3.1';
+import { planInjection, REASONS, VERSION, normalizeSettings, getLinState } from './core.js?v=1.3.1';
+import { auditPreset, captureInjection, createHistory, planReasoning, requestKey, requestMeta, recordDiagnosis } from './diagnostics.js?v=1.3.1';
+import { installObserver } from './observer.js?v=1.3.1';
+import { analyzeOutput, structureDiagnosis, textDigest } from './structure.js?v=1.3.1';
+import { createRecovery } from './recovery.js?v=1.3.1';
 
-export function createController({ getContext, getSettings, onStatus = () => {}, networkTarget = globalThis, hasDraft = () => false }) {
+export function createController({ getContext, getSettings, getOrderId = () => null, onStatus = () => {}, networkTarget = globalThis, hasDraft = () => false }) {
     const ctx = getContext();
     const events = ctx.eventTypes || ctx.event_types || {};
     const bus = ctx.eventSource;
     const requestEvent = events.CHAT_COMPLETION_SETTINGS_READY;
     const ownedMessages = new WeakSet();
     const subscriptions = [];
+    // Unknown forks may not expose the prompt manager. A missing hint never blocks the host.
+    const currentOrder = preset => { try { return getOrderId(preset) ?? null; } catch { return null; } };
     const requestRecords = new WeakMap();
     const committedHandoffs = new WeakMap();
     const history = createHistory(() => getContext().accountStorage);
@@ -53,12 +55,18 @@ export function createController({ getContext, getSettings, onStatus = () => {},
             const forcedContinue = request?.type === 'continue' && (manualContinue || priorRef?.manualContinue === true);
             const settings = forcedContinue ? { ...getSettings(), enhanceContinue: true } : getSettings();
             if (request?.type === 'continue') manualContinue = false;
-            const result = planInjection(request, settings, { preset, ownedMessages });
+            const activeOrderId = currentOrder(preset);
+            const result = planInjection(request, settings, { preset, ownedMessages, activeOrderId });
             const prevHandoff = request && committedHandoffs.get(request);
-            if (prevHandoff && settings.enabled !== false && settings.requestMode === 'gemini4-story' &&
+            if (prevHandoff?.lin291 && settings.enabled !== false && result.lin291 &&
+                prevHandoff.mode === normalizeSettings(settings).requestMode && prevHandoff.key === requestKey(request) &&
+                prevHandoff.meta === JSON.stringify([result.lin291.identity,result.lin291.order,result.lin291.cueEnabled,result.lin291.confirmEnabled,result.lin291.npcEnabled,result.lin291.closureEnabled,result.lin291.authoredHandoff]) &&
+                (['g291-ready','g291-authored-ready'].includes(result.reason) || (prevHandoff.story && result.reason === 'g291-anchors')) &&
+                prevHandoff.cap === request.max_tokens && orderProof(request.messages, prevHandoff.witness)==='cue-before-user') return;
+            if (prevHandoff && !prevHandoff.lin291 && settings.enabled !== false && settings.requestMode === 'gemini4-story' &&
                 prevHandoff.key === requestKey(request) && prevHandoff.cap === request.max_tokens) return;
-            const lin = getLinState(preset);
-            let adjustment = result.applied ? planReasoning(request, settings) : null;
+            const lin = result.lin291 ? {known:result.identification==='Lin 2.9.1', active:result.lin291.cueEnabled} : getLinState(preset);
+            let adjustment = result.applied && !result.lin291 ? planReasoning(request, settings) : null;
             // Preflight writes so a frozen object cannot be half-modified.
             const writable = key => {
                 const d = Object.getOwnPropertyDescriptor(request, key);
@@ -68,10 +76,11 @@ export function createController({ getContext, getSettings, onStatus = () => {},
             let cap = result.handoff?.cap;
             if (cap && !writable('max_tokens')) {
                 cap = null; result.handoff = {...result.handoff, cap:null}; result.note = '预算字段只读，保留原上限。';
+                if (result.handoff.usingPresetTail && !result.changed) result.applied=false;
             }
             if (adjustment && !writable('reasoning_effort')) adjustment = null;
             // Finish all fallible planning/serialization before changing the host payload.
-            const planned = result.changed || adjustment ? { ...request,
+            const planned = result.changed || adjustment || cap ? { ...request,
                 ...(cap ? {max_tokens:cap.after} : {}),
                 ...(result.changed ? { messages: result.messages } : {}),
                 ...(adjustment ? { reasoning_effort: adjustment.after } : {}) } : request;
@@ -84,6 +93,7 @@ export function createController({ getContext, getSettings, onStatus = () => {},
                 requestMode: normalizeSettings(settings).requestMode,
                 ...(result.handoff ? {handoff:result.handoff} : {}),
                 ...(result.gemini4 ? { gemini4: result.gemini4 } : {}),
+                ...(result.lin291 ? {lin291:result.lin291, handoff:result.handoff ?? null} : {}),
                 origin: 'assembled',
                 manualContinue: forcedContinue,
                 identification: result.identification || 'none',
@@ -96,10 +106,10 @@ export function createController({ getContext, getSettings, onStatus = () => {},
                 tailRoles: result.tailRoles || [], note: result.note || prior?.note || '',
                 injected: result.applied ? result.injected.map(m => ({ role: m.role, content: m.content })) : [],
                 preview: result.applied ? result.injected.map(m => `${m.role}\n${m.content}`).join('\n\n') : '',
-                request: requestMeta(planned), warnings: auditPreset(preset, planned, settings),
+                request: requestMeta(planned), warnings: auditPreset(preset, planned, settings, activeOrderId),
                 adjustment: adjustment || prior?.adjustment || null,
             };
-            if (result.handoff) report.warnings = report.warnings.map(w => w.startsWith('尾部含强制最大思考')
+            if (result.handoff?.removedMaxDemand) report.warnings = report.warnings.map(w => w.startsWith('尾部含强制最大思考')
                 ? '原预设尾部要求最大思考；本次已从核实的 user 确认移除该段。其他条目和上游默认思考等级仍可影响用量。'
                 : w.startsWith('预设已含CoT交付与断点续传规则') ? '本次保留预设原有的 CoT 交付与断点规则，只让短确认跟随原 assistant 承接。' : w);
             if (result.identification === 'outgoing-exact-2.4') {
@@ -113,7 +123,10 @@ export function createController({ getContext, getSettings, onStatus = () => {},
                 result.injected.forEach(m => ownedMessages.add(m));
             }
             if (cap) request.max_tokens = cap.after;
-            if (result.handoff) committedHandoffs.set(request,{key,cap:request.max_tokens});
+            if (result.lin291 && (result.changed || cap)) committedHandoffs.set(request,{key,cap:request.max_tokens,lin291:true,
+                mode:normalizeSettings(settings).requestMode,story:!!result.handoff?.shortConfirmation,witness:result.orderWitness,
+                meta:JSON.stringify([result.lin291.identity,result.lin291.order,result.lin291.cueEnabled,result.lin291.confirmEnabled,result.lin291.npcEnabled,result.lin291.closureEnabled,result.lin291.authoredHandoff])});
+            else if (result.handoff && !result.lin291) committedHandoffs.set(request,{key,cap:request.max_tokens});
             if (adjustment) request.reasoning_effort = adjustment.after;
             last = report;
             if (!prior) response = null;
@@ -192,7 +205,10 @@ export function createController({ getContext, getSettings, onStatus = () => {},
             patch(candidate.id, { dispatch: {
                 at: new Date().toISOString(), correlation, injected, verified, tail, request: requestMeta(request),
                 ...(order ? { linOrder: order } : {}),
-                label: candidate.witness?.rules && order === 'cue-before-user' ? '浏览器发送时已核对：原规则 → Lin 原 assistant 承接 → 最终短 user 确认；这是语义承接。'
+                label: candidate.witness?.strictTail291 && order === 'cue-before-user'
+                    ? (candidate.witness.rules ? '发送已核对：完整原 user 规则 → 原 assistant 承接 → 短 user 确认；2.9.1 原规则均在。'
+                        : '发送已核对：2.9.1 原 assistant 承接 → 完整原 user 确认都在末尾，没有追加插件提示。')
+                    : candidate.witness?.rules && order === 'cue-before-user' ? '浏览器发送时已核对：原规则 → Lin 原 assistant 承接 → 最终短 user 确认；这是语义承接。'
                     : order === 'cue-before-user' ? '浏览器发送时已核对：Lin 原承接在 user 确认前；未使用原生回复前缀。'
                     : order ? '浏览器发送时未确认 Lin 承接在 user 确认前。' : injected.length ? `已观察到发送；注入文本${tail ? '位于末尾' : '存在，但后方还有内容'}${injected.some(m => m.match === 'segment') ? '；完整提示被合并入同角色消息' : ''}${correlation === 'injection-match' ? '；其他内容在组装后发生变化' : ''}` : '已观察到发送；本次未注入',
             } });
@@ -272,8 +288,8 @@ export function createController({ getContext, getSettings, onStatus = () => {},
             try { return await recovery.run(plan, action); }
             finally { manualContinue = false; recoveryRunning = false; }
         },
-        preview: request => planInjection(request, getSettings(), { preset: getContext().chatCompletionSettings || {} }),
-        audit: () => auditPreset(getContext().chatCompletionSettings || {}, {}, getSettings()),
+        preview: request => { const p=getContext().chatCompletionSettings || {};return planInjection(request,getSettings(),{preset:p,activeOrderId:currentOrder(p)}); },
+        audit: () => { const p=getContext().chatCompletionSettings || {};return auditPreset(p,{},getSettings(),currentOrder(p)); },
         inspectCurrent() {
             const message = getContext().chat?.findLast(m => m && !m.is_user && !m.is_system);
             if (!message || typeof message.mes !== 'string') return '当前聊天没有可检查的模型回复。';

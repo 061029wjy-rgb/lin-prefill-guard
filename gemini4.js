@@ -4,19 +4,19 @@ export const LIN_CONFIRM_ID = '68186c40-6f11-4c47-a036-58497d1d6795';
 const EVENT_ID = '2517270f-119f-4c44-aa89-87e53cf5f40c';
 const RELATIVE = p => p && (p.injection_position == null || p.injection_position === 0);
 
-export function gemini4Target(request = {}) {
+export function gemini4Target(request = {}, {lin291=false} = {}) {
     const source = request.chat_completion_source;
     if (!['makersuite', 'vertexai', 'custom'].includes(source)) return null;
     const model = String(request.model || '').trim().toLowerCase();
     // Match the explicit model IDs, including channel labels and their /fc and /vs variants.
-    const match = /(?:^|[-/:\s])gemini[-_ ]?4[-_ ]?(argon|carbon|hydrogen)(?:\/(?:fc|vs))?$/.exec(model);
-    if (!match || (model.match(/gemini[-_ ]?4/gi) || []).length !== 1) return null;
+    const match = /(?:^|[-/:\s])gemini[-_ ]?4[-_ ]?(argon|carbon|hydrogen|neon)(?:\/(?:fc|vs))?$/.exec(model);
+    if (!match || (match[1] === 'neon' && !lin291) || (model.match(/gemini[-_ ]?4/gi) || []).length !== 1) return null;
     return { model: 'gemini-4-' + match[1], source,
         indirect: source === 'custom' || !!request.reverse_proxy || model !== 'gemini-4-' + match[1] };
 }
 
 // A version hint only, never used as equality or provenance for modifying a message.
-function fingerprint(s) {
+export function fingerprint(s) {
     if (typeof s !== 'string') return '';
     s = s.replace(/\r\n/g, '\n');
     let h = 2166136261;
@@ -70,6 +70,7 @@ export function orderProof(messages, proof) {
     if (!proof || !Array.isArray(messages)) return null;
     const a = locate(messages, proof.cue), u = locate(messages, proof.confirm);
     if (a.length !== 1 || u.length !== 1) return 'unknown';
+    if (proof.strictTail291 && (Math.min(a[0],u[0]) !== messages.length-2 || Math.max(a[0],u[0]) !== messages.length-1)) return 'unknown';
     if (proof.rules) {
         const r = locate(messages, proof.rules);
         if (r.length !== 1 || r[0] + 1 !== a[0] || a[0] + 1 !== u[0] || u[0] !== messages.length - 1) return 'unknown';

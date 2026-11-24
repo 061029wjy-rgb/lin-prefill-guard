@@ -1,9 +1,10 @@
 /** Pure request planning. This module never sends requests or changes chat history. */
-import { deliveryProfile, deliveryCue } from './delivery.js?v=1.3.0';
-export const VERSION = '1.3.0';
+import { deliveryProfile, deliveryCue } from './delivery.js?v=1.3.1';
+import { identify291, plan291 } from './lin291.js?v=1.3.1';
+export const VERSION = '1.3.1';
 export const SETTINGS_KEY = 'lin_prefill_guard_v1';
-import { LIN_PROMPT_ID, planGemini4 } from './gemini4.js?v=1.3.0';
-import { planStoryHandoff } from './handoff.js?v=1.3.0';
+import { LIN_PROMPT_ID, planGemini4 } from './gemini4.js?v=1.3.1';
+import { planStoryHandoff } from './handoff.js?v=1.3.1';
 export { LIN_PROMPT_ID };
 export const DEFAULT_PREFILL = '已定位本轮任务：以聊天记录中真实用户的最新请求为准。续写承接最后有效正文，修订处理指定范围，戏外问题直接回答。沿用已启用的视角、角色控制和输出格式；下一条回复交付所需结果，不重演已完成的情节，不以接收确认或写作计划代替结果。';
 export const REGENERATE_PREFILL = '已定位本轮任务：重新回答聊天记录中真实用户的最新请求。以该请求之前的有效剧情为起点；被替换或未选中的回复不作为已发生剧情，不从其结尾续写。沿用已启用的视角、角色控制和输出格式，交付本轮完整的新回答。';
@@ -26,9 +27,19 @@ export const DEFAULTS = Object.freeze({
 });
 
 export const REASONS = Object.freeze({
+    'g291-ready': '已核对 Lin 2.9.1：原 assistant 承接和完整 user 确认已在末尾；无需移动，没有追加提示。',
+    'g291-restored': '已纠正 Lin 2.9.1 末尾两条原消息的反序；内容、角色和其他消息未变。',
+    'g291-handoff': '已保留整条 Lin 2.9.1 原确认，在原 assistant 承接之后使用 1.3 的短 user 确认。没有删除思考或创作规则。',
+    'g291-authored-ready': 'Lin 2.9.1 已有「生成交接」；完整 user 确认已在原 assistant 承接之后，保留原位，不追加插件短确认。',
+    'g291-authored-restored': '已交换反序的两条 Lin 2.9.1 原消息，让含「生成交接」的完整 user 确认回到末尾；没有改字或追加短确认。',
+    'g291-unverified': '版本名和实际条目不足以确认 Lin 2.9.1，或出现冲突；本次保持原样。',
+    'g291-order': '无法确定当前生效的提示顺序，或承接开关/顺序有冲突；未改请求。',
+    'g291-other-tail': '当前启用顺序还安排了其他尾部提示；保留你的布局，不移动或加短确认。',
+    'g291-anchors': '没有在末尾唯一匹配到两条独立的 2.9.1 原文；条目缺失、合并或重复时不拆不补。',
+    'g291-protected': '含非纯文本、签名、缓存、续传或多候选结构；本轮保留原请求。',
     'g4-handoff': '已核对 Lin 原条目，规则移至原 assistant 承接前，末尾为短 user 确认；本次请求取消了强制最大思考。',
-    'g4-other': '此模式仅适配 Gemini 4 Argon / Carbon / Hydrogen 的 AI Studio、Vertex 或自定义聊天连接；本次请求保持原样。',
-    'g4-not-lin282': '未确认 Lin 2.8.2 的承接与尾部确认条目；本次保持原样。',
+    'g4-other': '此连接或模型名不在当前预设的已识别范围；请求保持原样。',
+    'g4-not-lin282': '未确认 Lin 2.8.2 或 2.9.1 的独立承接和尾部确认；本次保持原样。',
     'g4-disabled': 'Lin 承接或尾部确认未启用，未移动消息。',
     'g4-uncertain': '无法唯一核对 Lin 独立承接与确认的位置（可能已合并、重复或被编辑），未移动或补写任何消息。',
     'g4-ready': 'Lin 原承接在 user 确认前；顺序正确，原请求未修改。Gemini 4 官方接口不支持自定回复前缀。',
@@ -146,7 +157,7 @@ function hasActiveToolFlow(request) {
  * ownedMessages contains only objects this running extension inserted earlier.
  * The caller commits the plan by assigning request.messages once.
  */
-export function planInjection(request, rawSettings = {}, { preset = {}, ownedMessages = new WeakSet() } = {}) {
+export function planInjection(request, rawSettings = {}, { preset = {}, ownedMessages = new WeakSet(), activeOrderId = null } = {}) {
     const settings = normalizeSettings(rawSettings);
     const type = typeof request?.type === 'string' ? (request.type.trim().toLowerCase() || 'normal') : 'normal';
     const skip = reason => ({ applied: false, changed: false, reason, type });
@@ -156,6 +167,8 @@ export function planInjection(request, rawSettings = {}, { preset = {}, ownedMes
     if (type === 'quiet') return skip('quiet');
     if (type === 'impersonate') return skip('impersonate');
     if (!['normal', 'regenerate', 'swipe', 'continue'].includes(type)) return skip('unsupported-type');
+    const v291 = identify291(preset);
+    if (v291) return plan291(request, preset, type, settings, activeOrderId, v291);
     if (['gemini4','gemini4-story'].includes(settings.requestMode)) {
         const reserved = [request.assistant_prefill, preset.assistant_prefill].some(v => typeof v === 'string' && v.trim())
             || request.messages.some(m => m.prefix === true);

@@ -1,7 +1,8 @@
-import { isGemini4Segment } from './gemini4.js?v=1.3.0';
-import { getLinState, normalizeSettings, plainText, VERSION } from './core.js?v=1.3.0';
-import { deliveryProfile } from './delivery.js?v=1.3.0';
-import { structureDiagnosis, endingDiagnosis, replySignalDiagnosis } from './structure.js?v=1.3.0';
+import { identify291, layout291 } from './lin291.js?v=1.3.1';
+import { isGemini4Segment } from './gemini4.js?v=1.3.1';
+import { getLinState, normalizeSettings, plainText, VERSION } from './core.js?v=1.3.1';
+import { deliveryProfile } from './delivery.js?v=1.3.1';
+import { structureDiagnosis, endingDiagnosis, replySignalDiagnosis } from './structure.js?v=1.3.1';
 
 export const HISTORY_KEY = 'lin_prefill_guard_history_v2';
 export const HISTORY_LIMIT = 50;
@@ -102,24 +103,31 @@ export function captureInjection(messages, injected = []) {
     return result;
 }
 
-export function auditPreset(preset = {}, request = {}, settings = {}) {
+export function auditPreset(preset = {}, request = {}, settings = {}, activeOrderId = null) {
     const notes = [];
     const effort = request.reasoning_effort || preset.reasoning_effort;
     const limit = request.max_tokens ?? preset.openai_max_tokens;
     if (['max', 'high', 'xhigh'].includes(effort)) notes.push(`思考强度为 ${effort}，输出上限 ${limit || '未提供'}；若只有思考没有正文，先检查返回的结束原因与思考用量。`);
-    const orders = preset.prompt_order?.find(o => String(o.character_id) === '100001')?.order || [];
+    const signature=identify291(preset), type=request.type||'normal';
+    const local=signature ? layout291(preset,type,activeOrderId,signature) : null;
+    const group=local ? local.meta.order : '100001';
+    const orders = preset.prompt_order?.find(o => group!=null && String(o?.character_id)===group)?.order || [];
     const active = (preset.prompts || []).filter(p => orders.some(o => o.identifier === p.identifier && o.enabled));
     const size = active.reduce((n, p) => n + (p.content?.length || 0), 0);
     if (size > 20000) notes.push(`输入侧固定提示约 ${size} 字符（不含世界书与聊天），这是发送给模型的提示词长度，不是模型输出或正文长度。`);
     if (active.some(p => /绝对不可以直接输出正文|必须进行最大程度的思考/.test(p.content || ''))) notes.push('尾部含强制最大思考要求；可与高思考参数叠加，且文字提示不能保证给正文预留 token。');
-    if (active.some(p => /【Lin_CoT模式与交付】/.test(p.content || '') && /【断点续传】/.test(p.content || ''))) {
+    if (!local && active.some(p => /【Lin_CoT模式与交付】/.test(p.content || '') && /【断点续传】/.test(p.content || ''))) {
         notes.push(normalizeSettings(settings).requestMode === 'enhance'
             ? '预设已含CoT交付与断点续传规则；当前增强模式仍会替换原承接条目并追加提示，存在重复干预。可切换原样诊断保留预设原顺序与原文。'
             : '预设已含CoT交付与断点续传规则，当前模式不另加交付提示。预设中的“续传”文字不等于服务商的解码凭据。');
     }
-    if (preset.enable_web_search === true) notes.push('预设开启网页搜索；无联网需要时可关闭，减少工具及渠道兼容变量。');
+    if (preset.enable_web_search === true) notes.push(local ? '网页版搜索已按预设开启；2.9.1 适配不要求关闭它。实际工具调用/历史另行保护。' : '预设开启网页搜索；无联网需要时可关闭，减少工具及渠道兼容变量。');
     if (Number(preset.openai_max_context) > 1048576) notes.push('本地上下文设置超过 1M；实际可用窗口取决于接口及真实模型，不能从渠道别名推断。本地设置不会扩大服务商窗口。');
     if (request.chat_completion_source === 'custom') notes.push('当前为自定义接口；模型别名不能证明后端型号或参数支持范围。请以渠道实际响应为准。');
+    if (local) {
+        if (signature==='conflict') notes.push('版本名和实际 2.9.1 条目未相互印证，本轮不据此改请求。');
+        else notes.push('Lin 2.9.1：多线、NPC 与 Lin_CoT 继续按预设启用项运行。核对承接不等于关闭模型原生思考。');
+    } else {
     const lin = getLinState(preset);
     if (!lin.known) notes.push('未识别到 Lin 承接条目；请核对当前实际加载的预设。');
     else if (lin.active === false) notes.push('Lin 承接条目已关闭。');
@@ -127,6 +135,7 @@ export function auditPreset(preset = {}, request = {}, settings = {}) {
     if (profile.cotConflict) notes.push(`同时启用了 ${profile.cotSources.length} 套Lin_CoT：${profile.cotSources.map(x => x.variant).join('、')}；重复规则可能增加预算与格式冲突。插件不擅自关闭条目，请只保留需要的一套。`);
     if (profile.known && profile.cotEnabled) notes.push('Lin预设启用了前置Lin_CoT注释；注释文本会消耗生成预算，旧版“正文字符数”包含这类文本，不能据此认定已有正文。');
     if (profile.known && profile.cotEnabled && !profile.sceneEnabled) notes.push('固定ID对应的可选场景条目关闭；未启用模块的专属要求不应由CoT间接启用。世界书或替代条目是否另有要求，需以实际请求为准。');
+    }
     const stops = Array.isArray(request.stop) ? request.stop : typeof request.stop === 'string' ? [request.stop] : [];
     const count = Object.values(requestMeta(request).stopCounts).reduce((a, b) => a + b, 0);
     if (count) notes.push(`发送前检测到 ${count} 条停止序列声明；STOP也可能由停止序列触发，不能仅凭STOP认定正文完整。插件不删除用户停止序列。`);
@@ -274,7 +283,7 @@ export function recordStatus(record = {}) {
     if (w.responseComplete && !w.finishReason) return { label: '结束原因未知', state: 'warn' };
     if (w.finishReason) return { label: '接口已结束·正文待核', state: 'idle' };
     if (record.dispatch) return { label: '等待结束证据', state: 'idle' };
-    return { label: record.applied ? '已组装' : '未注入', state: 'idle' };
+    return { label: ['g291-ready','g291-authored-ready'].includes(record.reason) && !record.applied ? '已核对·保持原样' : record.applied ? '已组装' : '未注入', state: 'idle' };
 }
 
 export function profileMismatch(record = {}) {
@@ -322,13 +331,25 @@ export function formatRecord(record, records = []) {
     const source = record.dispatch?.request?.source || record.request?.source;
     const sourceLabel = { makersuite: 'Google AI Studio', vertexai: 'Vertex AI', custom: '自定义接口', openai: 'OpenAI 兼容连接' }[source];
     lines.push(`连接来源：${sourceLabel || '其他或未提供'}（按酒馆请求参数；不证明实际上游服务）。`);
-    if (record.requestMode) lines.push(`请求处理：${record.requestMode === 'gemini4-story' ? 'Vertex 正文承接（Lin 2.8.2）' : record.requestMode === 'gemini4' ? 'Lin 2.8.2 × Gemini 4 承接兼容' : record.requestMode === 'observe' ? '原样诊断（不改写提示与参数）' : '承接增强（旧版行为）'}`);
+    const v291=record.lin291;
+    if(record.requestMode){
+        const family=v291 && v291.identity!=='conflict'?'Lin 2.9.1':(/^Lin 2\.[89]\.[\d]+$/.test(record.identification||'')?record.identification:
+            (record.version!=='1.3.1' && /^1\.[23]\./.test(record.version||''))?'Lin 2.8.2':'预设待核对');
+        const mode=record.requestMode==='observe'?'原样诊断（不改请求）':record.requestMode==='gemini4-story'?'Vertex 正文承接':record.requestMode==='enhance'?(v291?'保留 2.9.1 原文（已跳过旧版增强）':'承接增强（旧版行为）'):'Gemini 4 承接兼容';
+        lines.push('请求处理：'+mode+(['gemini4','gemini4-story'].includes(record.requestMode)?' · '+family:''));
+    }
+    if (v291 && v291.identity!=='conflict') {
+        const state=x=>x===true?'开':x===false?'关':'未确定';
+        lines.push('预设顺序：'+(v291.order==='consensus'?'各组承接设置相同，具体组未核实':v291.order||'未确定')+'；承接 '+state(v291.cueEnabled)+'，确认 '+state(v291.confirmEnabled)+'，多线叙事 NPC 优化 '+state(v291.npcEnabled)+'（仅预设开关，不证明模型已执行）。');
+        if ('closureEnabled' in v291) lines.push('预设条目「伪思考闭合」：'+state(v291.closureEnabled)+'；它和模型的原生思考是两回事。');
+        if (v291.authoredHandoff) lines.push('尾部确认含预设自己的「【生成交接】」；实际是否在末尾，以本条“发送”核对为准。');
+    }
     if (record.gemini4) lines.push('适配目标：' + record.gemini4.model + (record.gemini4.indirect ? '（按连接别名识别，实际后端未知）' : '（按酒馆连接识别）'));
     if (isGemini4Segment(record)) lines.push('此响应为上游分段，需要由后端在原请求上携带续传凭据。' + (record.wire.continuationTokenSeen ? '浏览器看到了凭据字段，插件不保存或重发其值。' : '浏览器未确认收到凭据。'));
     if (repeatedReplyEvidence(record, records)) lines.push(repeatedReplyEvidence(record, records));
     if (record.origin === 'unassociated' || record.reason === 'unmatched-dispatch') lines.push('归属：未关联请求（可能来自后台任务；不自动归入当前正文生成）。');
     if (shortReplyEvidence(record) && !compactStreamEvidence(record.wire)) lines.push(shortReplyEvidence(record));
-    if (record.handoff) lines.push('本轮正文承接：原规则在前，原 assistant 承接和短 user 确认在最后。' + (record.handoff.cap ? ' 本次组装的输出上限：16,384 → 32,768；以实际发送与回包为准。' : ' 未更改输出上限。'));
+    if (record.handoff) lines.push((record.handoff.usingPresetTail ? '本轮正文承接：原 assistant 承接之后是你自己的完整「生成交接」，没有追加插件短确认。' : '本轮正文承接：原规则在前，原 assistant 承接和短 user 确认在最后。') + (record.handoff.cap ? ' 本次组装的输出上限：16,384 → 32,768；以实际发送与回包为准。' : ' 未更改输出上限。'));
     if (record.adjustment) lines.push(`本次思考参数：${record.adjustment.before} → ${record.adjustment.after}`);
     if (record.identification) lines.push(`条目识别：${record.identification}`);
     if (record.applied && ['swipe', 'regenerate'].includes(record.type)) lines.push('本轮为重抽／重新生成；应重新完成原任务，不应仅接写被替换答案的末尾。');

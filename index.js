@@ -1,7 +1,8 @@
-import { gemini4Target, lin282Layout } from './gemini4.js?v=1.3.0';
-import { DEFAULT_PREFILL, DEFAULT_NUDGE, SETTINGS_KEY, VERSION, REASONS, normalizeSettings, migrateSettings } from './core.js?v=1.3.0';
-import { createController } from './controller.js?v=1.3.0';
-import { formatRecord, recordStatus } from './diagnostics.js?v=1.3.0';
+import { identify291, layout291 } from './lin291.js?v=1.3.1';
+import { gemini4Target, lin282Layout } from './gemini4.js?v=1.3.1';
+import { DEFAULT_PREFILL, DEFAULT_NUDGE, SETTINGS_KEY, VERSION, REASONS, normalizeSettings, migrateSettings } from './core.js?v=1.3.1';
+import { createController } from './controller.js?v=1.3.1';
+import { formatRecord, recordStatus } from './diagnostics.js?v=1.3.1';
 
 const INSTANCE_KEY = Symbol.for('lin-prefill-guard.instance');
 let controller;
@@ -10,6 +11,14 @@ let pendingReady;
 let lastView;
 let selectedRecord = '';
 
+// ST exposes the active prompt-order group on its own chat-completion module.
+// Feature-detect it without waiting in the generation path; incompatible forks use
+// evidence shared by the available groups, never another character's switches.
+let openaiHost;
+function getOrderId(preset) {
+    const pm=openaiHost?.promptManager;
+    return pm && pm.serviceSettings === preset ? pm.activeCharacter?.id ?? null : null;
+}
 function context() { return globalThis.SillyTavern.getContext(); }
 function settings() {
     const ctx = context();
@@ -53,8 +62,8 @@ function updateStatus(view) {
     const status = panel.querySelector('.lpg-status');
     const lines = [];
     if (state.enabled && state.requestMode === 'observe') lines.push('原样诊断：保留预设的原承接、CoT、角色权限和输出顺序；不追加插件提示或调整思考参数。');
-    if (state.enabled && state.requestMode === 'gemini4') lines.push('Gemini 4 兼容：只处理 Lin 2.8.2 的独立承接条目；不添加 user 催写，不更改生成预算。官方接口不接受自定义回复前缀。');
-    if (state.enabled && state.requestMode === 'gemini4-story') lines.push('Vertex 正文承接：仅重排核实过的 Lin 2.8.2 条目，让原承接紧贴简短确认；不修改预设文件。');
+    if (state.enabled && state.requestMode === 'gemini4') lines.push('承接兼容：核对 Lin 2.9.1 或 2.8.2 的原承接和确认。顺序正确就原样发送，不追加文字，不更改思考或输出上限。');
+    if (state.enabled && state.requestMode === 'gemini4-story') lines.push('Vertex 正文承接：2.9.1 尾部自带「【生成交接】」时，整条确认留在最后，不再加短确认；不改变模型的思考等级。');
     if (!state.enabled) lines.push('扩展当前关闭，下次请求不注入。以下为最近记录。');
     if (last) {
         if (last.at) lines.push(`最近检查：${new Date(last.at).toLocaleTimeString()} · ${last.type || '未知类型'}`);
@@ -183,19 +192,19 @@ function mount() {
     heading.append(element('span', {}, 'Lin 预填充助手'), element('span', { className: 'lpg-badge' }, '等待请求'));
     panel.append(heading);
     const body = element('div', { className: 'lpg-body' });
-    body.append(hint(`v${VERSION} · Lin 2.8.2 · Gemini 4 Argon / Carbon / Hydrogen 承接兼容。`));
+    body.append(hint(`v${VERSION} · Lin 2.9.1 / 2.8.2 承接适配。`));
     body.append(checkbox('启用扩展', 'enabled'));
-    body.append(select('请求处理', 'requestMode', [['gemini4', 'Lin 2.8.2 × Gemini 4（承接兼容）'], ['gemini4-story', 'Vertex 正文承接（Lin 2.8.2）'], ['observe', '原样诊断（不改请求）'], ['enhance', '承接增强（旧版提示）']]));
-    body.append(hint('新安装默认开启承接兼容；升级保留原先选择。仅核对顺序选「承接兼容」；在直接 Vertex 上让原承接紧贴短确认，选「Vertex 正文承接」。正常顺序不改；只有误放在末尾且能唯一核实的 Lin 承接才会被移回。'));
+    body.append(select('请求处理', 'requestMode', [['gemini4', '承接兼容（保留原文，推荐）'], ['gemini4-story', 'Vertex 正文承接（优先用预设自己的交接）'], ['observe', '原样诊断（不改请求）'], ['enhance', '承接增强（旧版提示）']]));
+    body.append(hint('Lin 2.9.1 日常选「承接兼容」：末尾已是原承接和原确认就一字不改；只有两条原文独立且恰好颠倒才交换。网页搜索可以照常开启。升级保留你原来的选择。'));
     body.append(checkbox('正文承接时，如原上限恰为 16,384，放宽到 32,768（可能增加用时和费用）', 'storyMoreTokens'));
-    body.append(hint('Vertex 正文承接保留原栏目和正文要求，移除末尾强制最大思考的一段；不强设思考等级或 CoT 字数。放宽上限为可选项。'));
+    body.append(hint('选「Vertex 正文承接」时：修订版 2.9.1 直接用你写的「生成交接」收尾；未写该小节的 2.9.1 在直接 Vertex 上才会把完整原规则放到原承接前，再以短确认结尾。只有 2.8.2 会移除已逐字核对的旧最大思考段。上限默认不改。'));
     body.append(select('适用范围', 'scope', [['lin', '仅已识别且启用的 Lin 承接条目'], ['all', '所有 Chat Completion 预设']]));
     body.append(select('注入方式', 'mode', [['user', '单条 user 提示（兼容优先）'], ['pair', 'assistant 承接 + user 执行']]));
     body.append(select('思考预算', 'reasoningMode', [['keep', '沿用当前参数'], ['balanced', '已识别 Gemini：高 / 最大思考降为适中']]));
     body.append(hint('上传的 Lin2.5 / 2.6 均为 auto，可保持“沿用当前参数”。可选降档只用于已识别的 Gemini 文本型号：3.0 Pro 用 low，其他支持型号用 medium；图像与未知型号不猜测。渠道仍可能忽略参数。'));
     body.append(checkbox('启用发送与接口取证（可查看实际发送提示）', 'captureNetwork'));
     body.append(checkbox('Lin2.6系列交付保护：识别三种CoT＋组件完整性', 'deliveryGuard'));
-    body.append(hint('增强模式才追加交付提示；沿用所选CoT篇幅，不设500字上限。取证可区分短流缺结束原因、疑似文字拒答与未闭合注释；这些判断不删除文本、不触发自动请求。'));
+    body.append(hint('旧版增强用于旧预设。识别到 2.9.1 时只核对原承接，不追加 2.6 提示、不接管 NPC 或 CoT 开关。取证可区分短流缺结束原因、疑似文字拒答与未闭合注释；这些判断不删除文本、不触发自动请求。'));
     body.append(checkbox('对“继续补全”也加提示（默认关闭）', 'enhanceContinue'));
     body.append(hint('渠道排查：在酒馆原生连接设置中关闭流式，再手动重试一次。必须在生成前切换；仅修改请求中的 stream 字段会使酒馆解析方式与响应不一致。取证现在可识别无标头 SSE、JSON 及协议错配。'));
     body.append(hint('原生继续预填充、后台摘要、用户代写、工具调用和 JSON 结构化请求会自动跳过。'));
@@ -220,10 +229,11 @@ function mount() {
     selftest.addEventListener('click', () => {
         if (['gemini4','gemini4-story'].includes(normalizeSettings(settings()).requestMode)) {
             const ctx = context(), preset = ctx.chatCompletionSettings || {};
-            const target = gemini4Target({ chat_completion_source: preset.chat_completion_source, model: ctx.getChatCompletionModel?.(preset), reverse_proxy: preset.reverse_proxy });
-            const layout = lin282Layout(preset);
+            const signature = identify291(preset);
+            const target = gemini4Target({ chat_completion_source: preset.chat_completion_source, model: ctx.getChatCompletionModel?.(preset), reverse_proxy: preset.reverse_proxy },{lin291:!!signature});
+            const layout = signature ? layout291(preset,'normal',getOrderId(preset),signature) : lin282Layout(preset);
             selfResult.textContent = !target ? REASONS['g4-other'] : layout.reason ? REASONS[layout.reason]
-                : '已识别 Lin 2.8.2 与 ' + target.model + (target.indirect ? '（按别名识别）' : '') + '。这里只核对配置；发送后才能核对两条消息的位置，不代表原生前缀已生效。';
+                : '已识别 Lin ' + (signature ? '2.9.1' : '2.8.2') + ' 与 ' + target.model + (target.indirect ? '（按别名识别）' : '') + '。这里只核对配置；发送后才能核对两条消息的位置，不代表原生前缀已生效。';
             return;
         }
         const result = controller.preview({ type: 'normal', messages: [{ role: 'user', content: '本地自检样例：接着写一个普通场景。' }] });
@@ -304,10 +314,11 @@ export function onEnable() {
         return;
     }
     globalThis[INSTANCE_KEY]?.dispose?.();
+    if (!openaiHost) void import('../../../openai.js').then(m=>{openaiHost=m;}).catch(()=>{});
     globalThis[INSTANCE_KEY] = { dispose: onDisable };
     lastView = undefined;
     selectedRecord = '';
-    controller = createController({ getContext: context, getSettings: settings, onStatus: updateStatus,
+    controller = createController({ getContext: context, getSettings: settings, getOrderId, onStatus: updateStatus,
         hasDraft: () => !!document.querySelector('#send_textarea')?.value?.trim() });
     mount();
     const ctx = context();
