@@ -5,7 +5,7 @@ import { createController } from '../controller.js';
 import { googleThinkingStatus, formatRecord } from '../diagnostics.js';
 import { inspectResponse } from '../observer.js';
 import { LIN_PROMPT_ID, LIN_CONFIRM_ID } from '../gemini4.js';
-import { NPC291 } from '../lin291.js';
+import { NPC291 } from '../protocol.js';
 
 const msg = (role, content) => ({role, content});
 const entries = [
@@ -61,7 +61,7 @@ test('explicit selection, mode, provider and protected request fields control fo
         {r:{type:'quiet'}},{r:{type:'impersonate'}},{r:{assistant_prefill:'一个段落'}},
         {r:{tools:[{type:'function'}]}},{r:{json_schema:{}}},{r:{n:2}},
         {r:{messages:[msg('user','仅有历史')]}}, {r:{type:'continue',messages:[msg('assistant','保留原断点')]}},
-        {p:{name:'Lin 2.9.0'}},
+        {p:{prompt_order:[]}},
     ];
     for (const c of cases) {
         const p=Object.assign(preset(),c.p), h=hooked(p,{requestMode:'gemini4',...c.s});

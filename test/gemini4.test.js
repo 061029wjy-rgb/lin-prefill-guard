@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { planInjection, migrateSettings, DEFAULTS, LIN_PROMPT_ID } from '../core.js';
-import { gemini4Target, lin282Layout, LIN_CONFIRM_ID, orderProof } from '../gemini4.js';
+import { gemini4Target, LIN_CONFIRM_ID, orderProof } from '../gemini4.js';
+import { inspectProtocol } from '../protocol.js';
 import { createController } from '../controller.js';
 import { createRecovery } from '../recovery.js';
 import { inspectResponse } from '../observer.js';
@@ -61,12 +62,12 @@ test('protected jobs, other versions, disabled prompts, missing anchors and ambi
         [ {type:'continue'}, null, 'g4-continue' ],[ {type:'quiet'},null,'quiet' ],[ {type:'impersonate'},null,'impersonate' ],
         [ {tools:[{}]},null,'tools' ],[ {messages:[q,m('tool','ok'),u,a]},null,'tools' ],[ {mcp_servers:[{}]},null,'tools' ],
         [ {json_schema:{}},null,'structured' ],[ {response_format:{type:'json_object'}},null,'structured' ],
-        [ {assistant_prefill:'手工前缀'},null,'native-prefill' ],[ {messages:[q,u,{...a,prefix:true}]},null,'native-prefill' ],
+        [ {assistant_prefill:'手工前缀'},null,'g291-unsupported-prefix' ],[ {messages:[q,u,{...a,prefix:true}]},null,'g291-unsupported-prefix' ],
         [ {},p=>{p.prompt_order[0].order[0].enabled=false;},'g4-disabled'],
         [ {},p=>{p.prompts[0].injection_trigger=['swipe'];},'trigger-excluded'],
-        [ {},p=>{p.name='Lin2.6.2';},'g4-not-lin282' ],
-        [ {},p=>{delete p.name;},'g4-not-lin282'],
-        [ {messages:[q,u,{...a,signature:'signed'}]},null,'g4-uncertain' ],
+        [ {},p=>{p.prompts[0].marker=true;},'g291-anchors' ],
+        [ {},p=>{p.prompt_order=[];},'g291-order'],
+        [ {messages:[q,u,{...a,signature:'signed'}]},null,'g291-protected' ],
         [ {messages:[q,u,m('assistant',instruction+'\n故事')]},null,'g4-uncertain' ],
         [ {messages:[q,a,u,a]},null,'g4-uncertain' ],[ {messages:[q,u,q,a]},null,'g4-uncertain' ],
         [ {messages:[q,u,m('system','其他插件的后记'),a]},null,'g4-uncertain' ],
@@ -83,7 +84,7 @@ test('new installations select the targeted adapter; old modes remain explicit c
     assert.equal(migrateSettings().requestMode,'gemini4'); assert.equal(DEFAULTS.requestMode,'gemini4');
     for(const requestMode of ['observe','enhance','gemini4']) assert.equal(migrateSettings({requestMode}).requestMode,requestMode);
     assert.equal(migrateSettings({mode:'pair'}).requestMode,'observe');
-    assert.equal(lin282Layout(preset()).confirm.identifier,LIN_CONFIRM_ID);
+    assert.equal(inspectProtocol(preset()).confirm.identifier,LIN_CONFIRM_ID);
 });
 test('controller serializes the repaired order exactly once; verifies the actual browser dispatch without storing cue or chat', async()=>{
     const bus=new Map(), ctx={ chat:[],chatCompletionSettings:preset(),eventTypes:{CHAT_COMPLETION_SETTINGS_READY:'request'},

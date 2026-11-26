@@ -60,19 +60,19 @@ test('SillyTavern 1.19.1 actual Google handler and converter, stock and patched,
     const confirm=preset.prompts.find(p=>p.identifier===LIN_CONFIRM_ID);
     const messages=[{role:'system',content:'续写当前场景。'},{role:'user',content:'请继续。'},
         ...[cue,confirm].map(({role,content})=>({role,content}))];
-    async function run(source,model,stock,stream,mutation={},authType='express') {
+    async function run(source,model,stock,stream,mutation={},authType='express',active=preset,inputMessages=messages,orderId=100001) {
         const listeners=new Map();
-        const ctx={chat:[], chatCompletionSettings:preset,eventTypes:{CHAT_COMPLETION_SETTINGS_READY:'ready'},
+        const ctx={chat:[], chatCompletionSettings:active,eventTypes:{CHAT_COMPLETION_SETTINGS_READY:'ready'},
             eventSource:{on:(e,f)=>listeners.set(e,f),removeListener:()=>{}}};
-        const ctl=createController({getContext:()=>ctx,getOrderId:()=>100001,
+        const ctl=createController({getContext:()=>ctx,getOrderId:()=>orderId,
             getSettings:()=>({requestMode:'gemini4',captureNetwork:false}),networkTarget:{}});
         const outgoing={model,chat_completion_source:source,stream,type:'normal',max_tokens:8192,temperature:1,
-            top_p:.93,top_k:32,n:1,use_sysprompt:true,enable_web_search:true,reasoning_effort:preset.reasoning_effort,
-            include_reasoning:preset.show_thoughts,stop:['END-SCENE'],messages:structuredClone(messages)};
+            top_p:.93,top_k:32,n:1,use_sysprompt:true,enable_web_search:true,reasoning_effort:active.reasoning_effort,
+            include_reasoning:active.show_thoughts,stop:['END-SCENE'],messages:structuredClone(inputMessages)};
         try {listeners.get('ready')(outgoing);} finally {ctl.dispose();}
         Object.assign(outgoing,mutation);  // A downstream extension or a different route can change these.
         const browserBody=JSON.parse(JSON.stringify(outgoing));
-        const request={body:browserBody,user:{directories:{}},socket:new EventEmitter()};
+        const request={body:structuredClone(browserBody),user:{directories:{}},socket:new EventEmitter()};
         const response={headers:{},code:200,setHeader(key,value){this.headers[key.toLowerCase()]=value;},
             status(code){this.code=code;return this;},send(value){this.value=value;},end(){}};
         const convert=hostFunction(stock?raw:updated,'sendMakerSuiteRequest',{
@@ -90,7 +90,7 @@ test('SillyTavern 1.19.1 actual Google handler and converter, stock and patched,
         await convert(request,response);
         assert.equal(response.code,200,JSON.stringify(response.value));
         assert.equal(calls.length,before+1);
-        return {body:calls.at(-1),receipt:response.headers['x-lin-gemini-thinking']};
+        return {body:calls.at(-1),browserBody,receipt:response.headers['x-lin-gemini-thinking']};
     }
     for(const source of ['makersuite','vertexai']) for(const model of ['gemini-4-carbon','gemini-4-argon']) {
         for(const stream of [false,true]) await t.test(source+' / '+model+(stream?' SSE':' JSON'),async()=>{
@@ -105,6 +105,28 @@ test('SillyTavern 1.19.1 actual Google handler and converter, stock and patched,
             assert.deepEqual(current.body.contents.slice(-2),[{role:'model',parts:[{text:cue.content}]},
                 {role:'user',parts:[{text:confirm.content}]}]);
             assert.equal('lin_gemini4_low_thinking' in current.body,false);
+        });
+    }
+    for (const env of ['LIN293_PRESET','LIN293_FY_PRESET']) {
+        await t.test(env+' through the stock and patched handler', {skip:!process.env[env]}, async () => {
+            const active = JSON.parse(await readFile(process.env[env],'utf8'));
+            const ends = [LIN_PROMPT_ID,LIN_CONFIRM_ID].map(id => {
+                const {role,content} = active.prompts.find(d => d.identifier === id);
+                return {role,content};
+            });
+            for (const id of [100000,100001]) for (const source of ['vertexai','makersuite']) {
+                const input = [messages[0],messages[1],ends[1],ends[0]];
+                const original = await run(source,'gemini-4-carbon',true,false,{},'express',active,input,id);
+                const current = await run(source,'gemini-4-carbon',false,false,{},'express',active,input,id);
+                assert.equal(current.receipt,undefined);
+                assert.equal(current.browserBody.lin_gemini4_low_thinking,undefined);
+                assert.equal(current.browserBody.reasoning_effort,active.reasoning_effort);
+                assert.equal(current.browserBody.messages.length,input.length);
+                assert.deepEqual(current.browserBody.messages.slice(-2),ends);
+                assert.deepEqual(current.body,original.body);
+                assert.deepEqual(current.body.contents.slice(-2),ends.map(({role,content}) =>
+                    ({role:role === 'assistant' ? 'model' : 'user',parts:[{text:content}]})));
+            }
         });
     }
     await t.test('server rechecks downstream overrides and proxy auth',async()=>{

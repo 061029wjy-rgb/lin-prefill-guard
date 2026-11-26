@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {planInjection, migrateSettings, VERSION} from '../core.js';
-import {identify291, layout291, NPC291} from '../lin291.js';
+import {inspectProtocol, NPC291} from '../protocol.js';
 import {LIN_PROMPT_ID as C, LIN_CONFIRM_ID as U, orderProof} from '../gemini4.js';
 import {ACK} from '../handoff.js';
 import {createController} from '../controller.js';
@@ -40,7 +40,7 @@ for(const model of ['argon','carbon','hydrogen','neon']) for(const type of ['nor
 test('two active-order groups have separate NPC switches and never borrow an enabled anchor',()=>{
     const p=oldSample(),r=req(p,true);assert.equal(go(r,p,'gemini4',100000).lin291.npcEnabled,false);
     assert.equal(go(r,p,'gemini4',100001).lin291.npcEnabled,true);
-    assert.deepEqual(go(r,p,'gemini4',null).lin291,{identity:'title-and-entry',path:'original',order:'consensus',cueEnabled:true,confirmEnabled:true,npcEnabled:null});
+    assert.deepEqual(go(r,p,'gemini4',null).lin291,{identity:'pair',path:'original',order:'consensus',cueEnabled:true,confirmEnabled:true,npcEnabled:null});
     p.prompt_order[0].order[1].enabled=false;
     assert.equal(go(r,p,'gemini4',null).reason,'g291-order');assert.equal(go(r,p,'gemini4',100000).changed,false);assert.equal(go(r,p,'gemini4',100001).changed,true);
     assert.equal(go(r,p,'gemini4',999).reason,'g291-order');
@@ -57,13 +57,13 @@ test('user-specific trigger, original role, independent markers and complete unc
         p=>{p.prompts.push({identifier:'t',...m('system','用户的另一个结尾。')});p.prompt_order[1].order.push(g('t'));},
     ]){const p=oldSample(),r=req(p,true);edit(p);const z=go(r,p,'gemini4-story');assert.equal(z.changed,false);assert.equal(z.messages,r.messages);assert.ok(!z.handoff);}
 });
-test('both IDs alone, a filename alone, adjacent 2.9.0 / 2.9.10, or conflicting labels are not 2.9.1',()=>{
-    for(const nm of ['lin2.9.0','lin2.9.10','lin2.9.10beta','lin2.9.1rc1','lin2.8.2','lin3.0']){
-        const p=oldSample();p.name=nm;assert.equal(identify291(p),'conflict');assert.equal(go(req(p,true),p,'gemini4-story').changed,false);
+test('names, version-like labels and optional NPC entries cannot grant or veto a matching protocol',()=>{
+    for (const name of ['lin2.9.0','lin2.9.10','lin2.9.10beta','lin2.9.1rc1','Lin2.8.2','日常塔版',undefined]) {
+        const p=oldSample();p.name=name;p.preset_settings_openai='旧显示名';
+        p.prompts=p.prompts.filter(x=>x.identifier!==NPC291);
+        assert.equal(inspectProtocol(p).kind,'pair');assert.equal(go(req(p,true),p).reason,'g291-restored');
     }
-    const p=oldSample();p.preset_settings_openai='Lin2.8.2';assert.equal(identify291(p),'conflict');
-    delete p.preset_settings_openai;p.prompts=p.prompts.filter(x=>x.identifier!==NPC291);
-    assert.equal(identify291(p),'conflict');p.name='别的预设';assert.equal(identify291(p),null);
+    assert.equal(inspectProtocol({name:'Lin2.9.1'}).kind,'unknown');
 });
 test('customized anchor content is preserved when it matches both preset and wire, including one text block',()=>{
     const p=oldSample();p.prompts[2].content+='\n修订：角色仍可沉默。';const r=req(p);
@@ -116,7 +116,7 @@ for(const [name,patch] of protectedCases)test('cannot modify '+name+' in 2.9.1',
 test('local diagnosis distinguishes settings from dispatch, old 1.3.0 history is not relabeled, search can stay on',()=>{
     const p=oldSample(),r=req(p);const z=go(r,p);
     const fmt=formatRecord({version:VERSION,at:'local',id:'1',requestMode:'gemini4',...z,messages:undefined});
-    assert.match(fmt,/Lin 2.9.1/);assert.match(fmt,/NPC 优化 开/);assert.match(fmt,/未观察到浏览器发送/);
+    assert.match(fmt,/Lin 独立双尾承接/);assert.match(fmt,/NPC 优化 开/);assert.match(fmt,/未观察到浏览器发送/);
     assert.doesNotMatch(fmt,/Lin 2.8.2 ×/);assert.equal(recordStatus(z).label,'已核对·保持原样');
     assert.match(formatRecord({version:'1.3.0',id:'2',at:'then',reason:'g4-not-lin282',requestMode:'gemini4'}),/Lin 2.8.2/);
     assert.match(auditPreset(p,r,{requestMode:'gemini4'},100000).join(' '),/不要求关闭/);
@@ -147,8 +147,8 @@ test('uploaded, byte-pinned Lin 2.9.1: full file, both orders, renamed host prof
         const ord=p.prompt_order.find(x=>x.character_id===id);assert.equal(ord.order.filter(x=>x.enabled).length,count);
         for(const renamed of [false,true]){
             const s=structuredClone(p);if(renamed){delete s.name;s.preset_settings_openai='我的测试副本';}
-            assert.equal(identify291(s),renamed?'preset-entries':'title-and-entry');
-            const base=req(s), r=go(base,s,'gemini4',id),l=layout291(s,'normal',id);
+            assert.equal(inspectProtocol(s).kind,'pair');
+            const base=req(s), r=go(base,s,'gemini4',id),l=inspectProtocol(s,'normal',id);
             assert.equal(r.reason,'g291-ready');assert.equal(r.lin291.npcEnabled,npc);assert.equal([...l.confirm.content].length,1258);assert.equal(l.confirm.content,base.messages.at(-1).content);
             const h=go(base,s,'gemini4-story',id);assert.equal(h.messages.at(-3),base.messages.at(-1));
             assert.equal(h.messages.at(-2),base.messages.at(-2));assert.equal(h.handoff.removedMaxDemand,false);
@@ -159,7 +159,7 @@ test('uploaded, byte-pinned Lin 2.9.1: full file, both orders, renamed host prof
     assert.equal(sha(readFileSync(actual)),h);
 });
 test('uploaded Lin 2.8.2 still uses the 1.3 path for its own maximum-thinking paragraph', {skip:!old},()=>{
-    const p=JSON.parse(readFileSync(old));assert.equal(identify291(p),null);
+    const p=JSON.parse(readFileSync(old));assert.equal(inspectProtocol(p).kind,'ordered');
     const z=go(req(p),p,'gemini4-story');assert.equal(z.reason,'g4-handoff');assert.equal(z.handoff.removedMaxDemand,true);assert.equal(z.lin291,undefined);
 });
 
