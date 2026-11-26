@@ -23,14 +23,14 @@ const SUMMARIES = [
 
 export function deliveryProfile(preset = {}, type = 'normal') {
     const prompts = Array.isArray(preset.prompts) ? preset.prompts : [];
-    const order = preset.prompt_order?.find(o => String(o?.character_id) === '100001')?.order;
+    const order = Array.isArray(preset.prompt_order) ? preset.prompt_order.find(o => String(o?.character_id) === '100001')?.order : null;
     const cot = prompts.find(p => p?.role === 'system' && /^本条将\s*Lin2\.6(?:\.\d+)*(?:实际|\s)/.test(p.content || ''));
     const cue = prompts.find(p => p?.identifier === CUE_ID);
     // Exported Lin2.6 has no top-level name. Recognize the actual entries, not a filename.
-    const known = cue?.role === 'assistant' && cue.content?.startsWith('[Lin｜本轮承接]')
+    const known = cue?.role === 'assistant' && typeof cue.content === 'string' && cue.content.startsWith('[Lin｜本轮承接]')
         && cot?.role === 'system' && /^本条将\s*Lin2\.6(?:\.\d+)*(?:实际|\s)/.test(cot.content || '');
     const enabled = id => Array.isArray(order) && order.some(x => x?.identifier === id && x.enabled === true)
-        && prompts.some(p => p?.identifier === id && (!p.injection_trigger?.length || p.injection_trigger.includes(type)));
+        && prompts.some(p => p?.identifier === id && (p.injection_trigger == null || (Array.isArray(p.injection_trigger) && (!p.injection_trigger.length || p.injection_trigger.includes(type)))));
     // ID variants from the actual Lin2.6.2 export. Unknown copies need both a
     // family header and an output-format marker; a name alone is not evidence.
     const cotSources = prompts.filter(p => p?.role === 'system' && typeof p.content === 'string' && p.content.trim() && enabled(p.identifier)
@@ -46,7 +46,7 @@ export function deliveryProfile(preset = {}, type = 'normal') {
     return { known: !!known, orderKnown: Array.isArray(order), cueEnabled: enabled(CUE_ID),
         cotEnabled, cotSources, cotConflict: cotSources.length > 1, cotEvidence: 'preset-order',
         sceneEnabled: enabled(SCENE_ID), components,
-        inputPromptChars: prompts.filter(p => enabled(p.identifier)).reduce((n, p) => n + (p.content?.length || 0), 0) };
+        inputPromptChars: prompts.filter(p => p && enabled(p.identifier)).reduce((n, p) => n + (p.content?.length || 0), 0) };
 }
 
 export function deliveryCue(profile, type = 'normal') {

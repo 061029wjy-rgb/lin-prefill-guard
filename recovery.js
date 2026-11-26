@@ -1,6 +1,6 @@
-import { isGemini4Segment } from './gemini4.js?v=1.3.2';
-import { hasApiError, hasServiceRestriction } from './diagnostics.js?v=1.3.2';
-import { analyzeOutput } from './structure.js?v=1.3.2';
+import { isGemini4Segment } from './gemini4.js?v=1.3.4';
+import { hasApiError, hasServiceRestriction } from './diagnostics.js?v=1.3.4';
+import { analyzeOutput } from './structure.js?v=1.3.4';
 
 // A saved placeholder after an API error is not a model prefix. Preserve the
 // user's ability to resume genuine partial text received before a later error.

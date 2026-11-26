@@ -1,10 +1,10 @@
-import { orderProof } from './gemini4.js?v=1.3.2';
-import { directGoogle4 } from './lin291.js?v=1.3.2';
-import { planInjection, REASONS, VERSION, normalizeSettings, getLinState } from './core.js?v=1.3.2';
-import { auditPreset, captureInjection, createHistory, planReasoning, requestKey, requestMeta, recordDiagnosis } from './diagnostics.js?v=1.3.2';
-import { installObserver } from './observer.js?v=1.3.2';
-import { analyzeOutput, structureDiagnosis, textDigest } from './structure.js?v=1.3.2';
-import { createRecovery } from './recovery.js?v=1.3.2';
+import { orderProof } from './gemini4.js?v=1.3.4';
+import { directGoogle4 } from './protocol.js?v=1.3.4';
+import { planInjection, REASONS, VERSION, normalizeSettings, getLinState } from './core.js?v=1.3.4';
+import { auditPreset, captureInjection, createHistory, planReasoning, requestKey, requestMeta, recordDiagnosis } from './diagnostics.js?v=1.3.4';
+import { installObserver } from './observer.js?v=1.3.4';
+import { analyzeOutput, structureDiagnosis, textDigest } from './structure.js?v=1.3.4';
+import { createRecovery } from './recovery.js?v=1.3.4';
 
 export function createController({ getContext, getSettings, getOrderId = () => null, onStatus = () => {}, networkTarget = globalThis, hasDraft = () => false }) {
     const ctx = getContext();
@@ -69,13 +69,14 @@ export function createController({ getContext, getSettings, getOrderId = () => n
             const prevHandoff = request && committedHandoffs.get(request);
             const repeat291 = prevHandoff?.lin291 && settings.enabled !== false && result.lin291 &&
                 prevHandoff.mode === normalizeSettings(settings).requestMode && prevHandoff.key === requestKey(request) &&
-                prevHandoff.meta === JSON.stringify([result.lin291.identity,result.lin291.order,result.lin291.cueEnabled,result.lin291.confirmEnabled,result.lin291.npcEnabled,result.lin291.closureEnabled,result.lin291.authoredHandoff]) &&
-                (['g291-ready','g291-authored-ready'].includes(result.reason) || (prevHandoff.story && result.reason === 'g291-anchors')) &&
+                prevHandoff.order === result.lin291.order && prevHandoff.authored === !!result.lin291.authoredHandoff &&
+                (['g291-ready','g291-authored-ready'].includes(result.reason) || (prevHandoff.story && result.reason === 'g291-anchors' &&
+                    result.currentPair?.cue === prevHandoff.witness.cue.content && result.currentPair?.confirm === prevHandoff.witness.rules.content)) &&
                 prevHandoff.cap === request.max_tokens && orderProof(request.messages, prevHandoff.witness)==='cue-before-user';
             // A stock host ignores this local flag. The optional host patch checks
             // the source, model and both settings again before building the Google body.
             const forwardLow = (result.orderWitness || result.plainContinue || repeat291)
-                && result.identification === 'Lin 2.9.1' && directGoogle4(result.gemini4)
+                && result.protocol === 'pair' && result.reason !== 'observe-only' && directGoogle4(result.gemini4)
                 && request.model === result.gemini4.model
                 && !(request.chat_completion_source === 'vertexai' && request.vertexai_auth_mode === 'proxy')
                 && preset.show_thoughts === false && preset.reasoning_effort === 'low'
@@ -91,7 +92,8 @@ export function createController({ getContext, getSettings, getOrderId = () => n
             }
             if (prevHandoff && !prevHandoff.lin291 && settings.enabled !== false && settings.requestMode === 'gemini4-story' &&
                 prevHandoff.key === requestKey(request) && prevHandoff.cap === request.max_tokens) return;
-            const lin = result.lin291 ? {known:result.identification==='Lin 2.9.1', active:result.lin291.cueEnabled} : getLinState(preset);
+            const lin = result.protocol === 'unknown' ? {known:false,active:null} :
+                result.lin291 ? {known:true,active:result.lin291.cueEnabled} : getLinState(preset);
             let adjustment = result.applied && !result.lin291 ? planReasoning(request, settings) : null;
             // Preflight writes so a frozen object cannot be half-modified.
             const writable = key => {
@@ -122,23 +124,22 @@ export function createController({ getContext, getSettings, getOrderId = () => n
                 id: prior?.id || id(), at: prior?.at || new Date().toISOString(), version: VERSION,
                 type: result.type, applied: result.applied, reason: result.reason,
                 requestMode: normalizeSettings(settings).requestMode,
-                ...(result.handoff ? {handoff:result.handoff} : {}),
-                ...(result.gemini4 ? { gemini4: result.gemini4 } : {}),
-                ...(result.lin291 ? {lin291:result.lin291, handoff:result.handoff ?? null} : {}),
+                gemini4:result.gemini4 ?? null, protocol:result.protocol ?? null,
+                lin291:result.lin291 ?? null, handoff:result.handoff ?? null,
                 origin: 'assembled',
                 manualContinue: forcedContinue,
                 identification: result.identification || 'none',
                 deliveryGuard: result.deliveryGuard === true,
                 deliveryProfile: result.profile || null,
                 presetState: { promptCount: Array.isArray(preset.prompts) ? preset.prompts.length : 0, known: lin.known, active: lin.active },
-                explanation: REASONS[result.reason] || result.reason,
+                explanation: [REASONS[result.reason] || result.reason,result.detail].filter(Boolean).join(' '),
                 removedOriginal: result.removedOriginal || prior?.removedOriginal || false,
-                netChars: result.changed ? result.netChars : prior?.netChars || 0,
-                tailRoles: result.tailRoles || [], note: result.note || prior?.note || '',
+                netChars: result.protocol ? result.netChars : result.changed ? result.netChars : prior?.netChars || 0,
+                tailRoles: result.tailRoles || [], note: result.note || '',
                 injected: result.applied ? result.injected.map(m => ({ role: m.role, content: m.content })) : [],
                 preview: result.applied ? result.injected.map(m => `${m.role}\n${m.content}`).join('\n\n') : '',
                 request: requestMeta(planned), warnings: auditPreset(preset, planned, settings, activeOrderId),
-                adjustment: adjustment || prior?.adjustment || null,
+                adjustment: adjustment || (!result.protocol && prior?.adjustment) || null,
             };
             if (result.handoff?.removedMaxDemand) report.warnings = report.warnings.map(w => w.startsWith('尾部含强制最大思考')
                 ? '原预设尾部要求最大思考；本次已从核实的 user 确认移除该段。其他条目和上游默认思考等级仍可影响用量。'
@@ -157,7 +158,7 @@ export function createController({ getContext, getSettings, getOrderId = () => n
             if (cap) request.max_tokens = cap.after;
             if (result.lin291 && (result.changed || cap)) committedHandoffs.set(request,{key,cap:request.max_tokens,lin291:true,
                 mode:normalizeSettings(settings).requestMode,story:!!result.handoff?.shortConfirmation,witness:result.orderWitness,
-                meta:JSON.stringify([result.lin291.identity,result.lin291.order,result.lin291.cueEnabled,result.lin291.confirmEnabled,result.lin291.npcEnabled,result.lin291.closureEnabled,result.lin291.authoredHandoff])});
+                order:result.lin291.order,authored:!!result.lin291.authoredHandoff});
             else if (result.handoff && !result.lin291) committedHandoffs.set(request,{key,cap:request.max_tokens});
             if (adjustment) request.reasoning_effort = adjustment.after;
             last = report;
@@ -238,8 +239,8 @@ export function createController({ getContext, getSettings, getOrderId = () => n
                 at: new Date().toISOString(), correlation, injected, verified, tail, request: requestMeta(request),
                 ...(order ? { linOrder: order } : {}),
                 label: candidate.witness?.strictTail291 && order === 'cue-before-user'
-                    ? (candidate.witness.rules ? '发送已核对：完整原 user 规则 → 原 assistant 承接 → 短 user 确认；2.9.1 原规则均在。'
-                        : '发送已核对：2.9.1 原 assistant 承接 → 完整原 user 确认都在末尾，没有追加插件提示。')
+                    ? (candidate.witness.rules ? '发送已核对：完整原 user 规则 → 原 assistant 承接 → 短 user 确认；已核对预设原规则。'
+                        : '发送已核对：原 assistant 承接 → 完整原 user 确认都在末尾，没有追加插件提示。')
                     : candidate.witness?.rules && order === 'cue-before-user' ? '浏览器发送时已核对：原规则 → Lin 原 assistant 承接 → 最终短 user 确认；这是语义承接。'
                     : order === 'cue-before-user' ? '浏览器发送时已核对：Lin 原承接在 user 确认前；未使用原生回复前缀。'
                     : order ? '浏览器发送时未确认 Lin 承接在 user 确认前。' : injected.length ? `已观察到发送；注入文本${tail ? '位于末尾' : '存在，但后方还有内容'}${injected.some(m => m.match === 'segment') ? '；完整提示被合并入同角色消息' : ''}${correlation === 'injection-match' ? '；其他内容在组装后发生变化' : ''}` : '已观察到发送；本次未注入',
