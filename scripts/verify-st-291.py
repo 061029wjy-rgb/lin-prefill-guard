@@ -117,7 +117,7 @@ def main():
                     if not page.locator('#rm_extensions_block').is_visible():page.locator('#extensions-settings-button .drawer-toggle').click()
                     panel.locator('[data-setting="requestMode"]').select_option('gemini4-story')
                     panel.get_by_role('button',name='本地自检（不调用模型）').click()
-                    assert '已识别 Lin 2.9.1' in panel.locator('.lpg-selftest').inner_text()
+                    assert 'Lin 独立双尾承接' in panel.locator('.lpg-selftest').inner_text()
                     i=len(wire);j=len(peer.payloads);result=pg.evaluate('()=>test291.full()')
                     assert len(wire)-i==len(peer.payloads)-j==3 and result['userTurns']==1,(len(wire)-i,len(peer.payloads)-j,result)
                     for row,raw in zip(result['rows'],wire[i:]):
