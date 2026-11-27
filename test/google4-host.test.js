@@ -9,6 +9,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
 import { createController } from '../controller.js';
+import { planInjection } from '../core.js';
+import { googleProxyKey } from '../prefill.js';
+import { addResponseData } from '../observer.js';
 import { LIN_PROMPT_ID, LIN_CONFIRM_ID } from '../gemini4.js';
 
 const file = 'src/endpoints/backends/chat-completions.js';
@@ -142,5 +145,116 @@ test('SillyTavern 1.19.1 actual Google handler and converter, stock and patched,
         const a=await run('vertexai','gemini-4-argon',false,false,{},'full');
         assert.deepEqual(a.body.generationConfig.thinkingConfig,{thinkingLevel:'LOW',includeThoughts:false});
         assert.equal(a.receipt,'low-no-summary');
+    });
+});
+
+test('stock ST native prefix forwarding and optional non-streaming usage passthrough',
+    { skip: !host || !process.env.LIN293_FY_PRESET }, async t => {
+    const preset = JSON.parse(await readFile(process.env.LIN293_FY_PRESET, 'utf8'));
+    const source = await readFile(join(host, file), 'utf8');
+    const converter = await readFile(join(host, 'src/prompt-converters.js'), 'utf8');
+    const usagePatch = fileURLToPath(new URL('../compat/st-1.19.1-token-usage.patch', import.meta.url));
+    const temp = await mkdtemp(join(tmpdir(), 'lin-prefill-host-'));
+    t.after(() => rm(temp, { recursive: true, force: true }));
+    await mkdir(dirname(join(temp, file)), { recursive: true });
+    await writeFile(join(temp, file), source);
+    execFileSync('git', ['apply', '--check', usagePatch], { cwd: temp });
+    execFileSync('git', ['apply', usagePatch], { cwd: temp });
+    const patched = await readFile(join(temp, file), 'utf8');
+    execFileSync('git', ['apply', '-R', usagePatch], { cwd: temp });
+    assert.equal(await readFile(join(temp, file), 'utf8'), source);
+    execFileSync('git', ['apply', patch], { cwd: temp });
+    execFileSync('git', ['apply', '--check', usagePatch], { cwd: temp });
+
+    const getConfigValue = (_key, fallback) => fallback;
+    const REASONING_EFFORT = Object.fromEntries(['auto', 'min', 'low', 'medium', 'high', 'max'].map(value => [value, value]));
+    const PROMPT_PROCESSING_TYPE = { MERGE:'merge', CLAUDE:'claude', MERGE_TOOLS:'merge_tools', SEMI:'semi',
+        SEMI_TOOLS:'semi_tools', STRICT:'strict', STRICT_TOOLS:'strict_tools', SINGLE:'single' };
+    const getHostConverter = (name, deps = {}) => hostFunction(converter, name, {
+        getConfigValue, REASONING_EFFORT, PROMPT_PROCESSING_TYPE, PROMPT_PLACEHOLDER: '开始。', ...deps,
+    });
+    const deps = {
+        URL, AbortController, process, getConfigValue, PROMPT_PROCESSING_TYPE, getPromptNames: () => ({}),
+        getVertexAIAuth: async () => ({ authType: 'proxy', authHeader: 'Bearer fixture' }),
+        CHAT_COMPLETION_SOURCES: { VERTEXAI: 'vertexai' },
+        API_VERTEX_AI: 'https://aiplatform.googleapis.com', API_MAKERSUITE: 'https://generativelanguage.googleapis.com',
+        API_DEEPSEEK: 'https://api.deepseek.com/beta', API_MISTRAL: 'https://api.mistral.ai/v1',
+        API_CLAUDE: 'https://api.anthropic.com/v1', readSecret: () => 'fixture',
+        SECRET_KEYS: { MAKERSUITE: 'google', DEEPSEEK: 'deepseek', MISTRALAI: 'mistral', CLAUDE: 'claude' },
+        GEMINI_SAFETY: [], VERTEX_SAFETY: [], enableSystemPromptCache: false, cachingAtDepth: -1, enableAdaptiveThinking: true,
+        console: { info() {}, debug() {}, warn() {}, error() {} }, util: { inspect: () => '' },
+        color: { red: String },
+    };
+    for (const name of ['convertGooglePrompt', 'convertClaudeMessages', 'convertMistralMessages',
+        'calculateClaudeBudgetTokens', 'calculateGoogleBudgetTokens', 'addAssistantPrefix', 'addReasoningContentToToolCalls'])
+        deps[name] = getHostConverter(name);
+    deps.postProcessPrompt = getHostConverter('postProcessPrompt', { mergeMessages: getHostConverter('mergeMessages') });
+    const asMessage = ({ role, content }) => ({ role, content });
+    const cue = asMessage(preset.prompts.find(row => row.identifier === LIN_PROMPT_ID));
+    const confirm = asMessage(preset.prompts.find(row => row.identifier === LIN_CONFIRM_ID));
+    const request = { type: 'normal', stream: false, reasoning_effort: 'auto', include_reasoning: false,
+        enable_web_search: false, max_tokens: 4000, use_sysprompt: true,
+        messages: [{ role: 'system', content: '场景。' }, { role: 'user', content: '继续。' }, cue, confirm] };
+
+    async function callHost(code, handler, outgoing, packet) {
+        const calls = [];
+        const run = hostFunction(code, handler, { ...deps,
+            fetch: async (url, { body }) => {
+                calls.push({ url: String(url), body: JSON.parse(body) });
+                return Response.json(packet);
+            },
+        });
+        const response = { code: 200, status(code) { this.code = code; return this; },
+            send(value) { this.value = value; }, end() {} };
+        await run({ body: structuredClone(outgoing), socket: new EventEmitter(), user: { directories: {} } }, response);
+        assert.equal(response.code, 200, JSON.stringify(response.value));
+        assert.equal(calls.length, 1);
+        return { ...calls[0], reply: response.value };
+    }
+    for (const [channel, model, handler, flag] of [
+        ['mistralai', 'mistral-large-latest', 'sendMistralAIRequest', true],
+        ['deepseek', 'deepseek-v4-flash', 'sendDeepSeekRequest', true],
+        ['claude', 'claude-haiku-4-5-20251001', 'sendClaudeRequest', false],
+    ]) await t.test(channel, async () => {
+        const outgoing = { ...request, model, chat_completion_source: channel };
+        const plan = planInjection(outgoing, {}, { preset, activeOrderId: 100001 });
+        assert.equal(plan.reason, 'prefill-converted');
+        const packet = { choices: [{ message: { content: '正文。' } }], content: [{ type: 'text', text: '正文。' }],
+            usage: { input_tokens: 61, output_tokens: 9 } };
+        const sent = await callHost(patched, handler, { ...outgoing, messages: plan.messages }, packet);
+        const last = sent.body.messages.at(-1);
+        assert.equal(last.role, 'assistant');
+        assert.equal(Array.isArray(last.content) ? last.content[0].text : last.content, cue.content);
+        assert.equal(last.prefix, flag ? true : undefined);
+        assert.equal(sent.body.max_tokens, 4000);
+        assert.ok(JSON.stringify(sent.body.messages.slice(0, -1)).includes(JSON.stringify(confirm.content).slice(1, -1)));
+        if (channel === 'deepseek') assert.match(sent.url, /api\.deepseek\.com\/beta\/chat\/completions$/);
+        if (channel === 'claude') assert.deepEqual(sent.reply.usage, packet.usage);
+    });
+    await t.test('Carbon proxy preserves rules with and without declared prefill support', async () => {
+        const outgoing = { ...request, chat_completion_source: 'vertexai', model: 'gemini-4-carbon',
+            reverse_proxy: 'https://gateway.example', vertexai_auth_mode: 'proxy', enable_web_search: true };
+        const packet = { candidates: [{ content: { role: 'model', parts: [{ text: '正文。' }] }, finishReason: 'STOP' }],
+            usageMetadata: { promptTokenCount: 61, thoughtsTokenCount: 14, candidatesTokenCount: 9, totalTokenCount: 84 } };
+        for (const declared of [false, true]) {
+            const plan = planInjection(outgoing, { googleProxyPrefill: declared ? googleProxyKey(outgoing) : '' },
+                { preset, activeOrderId: 100001 });
+            assert.equal(plan.reason, declared ? 'prefill-converted' : 'prefill-unavailable');
+            const input = { ...outgoing, messages: plan.messages };
+            const stock = await callHost(source, 'sendMakerSuiteRequest', input, packet);
+            const sent = await callHost(patched, 'sendMakerSuiteRequest', input, packet);
+            assert.deepEqual(sent.body, stock.body);
+            assert.equal(sent.body.contents.at(-1).role, declared ? 'model' : 'user');
+            const rulesTurn = sent.body.contents.at(declared ? -2 : -1);
+            assert.ok(rulesTurn.parts.some(part => part.text.includes(confirm.content)));
+            assert.equal(sent.body.generationConfig.maxOutputTokens, 4000);
+            assert.deepEqual(sent.body.tools, [{ google_search: {} }]);
+            assert.equal(stock.reply.usageMetadata, undefined);
+            assert.deepEqual(sent.reply.usageMetadata, packet.usageMetadata);
+            const stats = { reasoningChars: 0 };
+            addResponseData(stats, sent.reply);
+            assert.deepEqual([stats.promptTokens, stats.thoughtTokens, stats.outputTokens, stats.totalTokens], [61, 14, 9, 84]);
+            assert.equal(JSON.stringify(sent.reply.choices), JSON.stringify(stock.reply.choices));
+        }
     });
 });

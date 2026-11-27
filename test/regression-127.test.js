@@ -22,7 +22,8 @@ for (const type of ['normal', 'swipe', 'regenerate', 'continue']) {
     test(`default ${type} preserves request objects, preset cue and settings even with old enhancements selected`, () => {
         const req = request(type), p = preset(), original = JSON.stringify({ req, p });
         const result = planInjection(req, migrateSettings({ mode: 'pair', enhanceContinue: true, reasoningMode: 'balanced' }), { preset: p });
-        assert.equal(result.reason, 'observe-only'); assert.equal(result.applied, false); assert.equal(result.changed, false);
+        assert.equal(result.reason, type === 'continue' ? 'g4-continue' : 'g291-anchors');
+        assert.equal(result.applied, false); assert.equal(result.changed, false);
         assert.equal(result.messages, req.messages); assert.deepEqual(result.injected, []);
         assert.equal(JSON.stringify({ req, p }), original);
         assert.ok(result.messages.some(m => m.content.includes('不把失败回复当成情节')));
@@ -33,12 +34,12 @@ for (const type of ['normal', 'swipe', 'regenerate', 'continue']) {
 test('mode migration retains custom text and disabled settings; explicit later choices persist', () => {
     const old = { prefill: '个人提示', nudge: '个人执行', enabled: false, captureNetwork: false, mode: 'pair' };
     const next = migrateSettings(old);
-    assert.equal(next.requestMode, 'observe');
+    assert.equal(next.requestMode, 'native');
     for (const key of Object.keys(old)) assert.equal(next[key], old[key]);
     assert.deepEqual(migrateSettings(next), next);
     assert.equal(migrateSettings({ ...next, requestMode: 'enhance' }).requestMode, 'enhance');
     assert.equal(migrateSettings().requestMode, DEFAULTS.requestMode);
-    assert.equal(DEFAULTS.requestMode, 'gemini4');
+    assert.equal(DEFAULTS.requestMode, 'native');
 });
 
 test('explicit legacy enhancement still works; diagnostic mode cannot mutate a frozen request', () => {
@@ -128,7 +129,7 @@ test('controller observes native requests, preserves identity and associates sav
     await target.fetch('/api/backends/chat-completions/generate', { method: 'POST', body: JSON.stringify(req) });
     ctx.chat.push({ mes: '桌上有一把刀。', is_user: false }); await listeners.get('message')(0, 'normal'); await controller.idle();
     const record = controller.snapshot().last;
-    assert.equal(record.requestMode, 'observe'); assert.equal(record.reason, 'observe-only');
+    assert.equal(record.requestMode, 'native'); assert.equal(record.reason, 'g291-anchors');
     assert.equal(record.dispatch.correlation, 'exact'); assert.equal(record.adjustment, null);
     assert.deepEqual(record.injected, []); assert.equal(record.rendered.chars, 7); assert.equal(calls, 1);
     controller.dispose();

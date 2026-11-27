@@ -81,9 +81,10 @@ test('protected jobs, other versions, disabled prompts, missing anchors and ambi
     }
 });
 test('new installations select the targeted adapter; old modes remain explicit choices',()=>{
-    assert.equal(migrateSettings().requestMode,'gemini4'); assert.equal(DEFAULTS.requestMode,'gemini4');
-    for(const requestMode of ['observe','enhance','gemini4']) assert.equal(migrateSettings({requestMode}).requestMode,requestMode);
-    assert.equal(migrateSettings({mode:'pair'}).requestMode,'observe');
+    assert.equal(migrateSettings().requestMode,'native'); assert.equal(DEFAULTS.requestMode,'native');
+    for(const requestMode of ['observe','enhance','native']) assert.equal(migrateSettings({requestMode}).requestMode,requestMode);
+    for(const requestMode of ['gemini4','gemini4-story']) assert.equal(migrateSettings({requestMode}).requestMode,'native');
+    assert.equal(migrateSettings({mode:'pair'}).requestMode,'native');
     assert.equal(inspectProtocol(preset()).confirm.identifier,LIN_CONFIRM_ID);
 });
 test('controller serializes the repaired order exactly once; verifies the actual browser dispatch without storing cue or chat', async()=>{
