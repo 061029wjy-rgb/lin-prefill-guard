@@ -69,7 +69,7 @@ test('ordinary Google and unconfirmed Google proxies preserve a correct original
     ]) {
         const request = req([user, cue, confirm], connection);
         const plan = run(request);
-        assert.equal(plan.reason, 'prefill-unavailable');
+        assert.equal(plan.reason, connection === proxy ? 'prefill-proxy-unverified' : 'prefill-unavailable');
         assert.equal(plan.messages, request.messages);
         assert.deepEqual(verifyPrefill(request, plan.prefillWitness), { verified: true, native: false, tailStart: 1 });
         const reversed = req([user, confirm, cue], connection);
@@ -79,8 +79,10 @@ test('ordinary Google and unconfirmed Google proxies preserve a correct original
     }
     assert.equal(googleProxyKey({ ...proxy, reverse_proxy: 'https://aiplatform.googleapis.com' }), '');
     const key = googleProxyKey(proxy);
-    for (const alternate of [{ model: 'gemini-4-argon' }, { reverse_proxy: 'https://another.example' }, { vertexai_auth_mode: 'full' }])
+    for (const alternate of [{ model: 'gemini-4-argon' }, { reverse_proxy: 'https://another.example' }])
         assert.equal(prefillRoute({ ...proxy, ...alternate }, key).method, null);
+    for (const vertexai_auth_mode of ['full', 'express', undefined])
+        assert.equal(prefillRoute({ ...proxy, vertexai_auth_mode }, key).method, 'google-proxy-model');
     for (const alternate of [
         { chat_completion_source: 'deepseek', model: 'deepseek-v4-flash', reverse_proxy: 'https://api.deepseek.com/' },
         { chat_completion_source: 'claude', model: 'claude-sonnet-4-6', reasoning_effort: 'auto' },
@@ -115,7 +117,7 @@ test('history images, signatures and tool pairs stay intact; positions identify 
     assert.equal(verifyPrefill(withProtectedTail, protectedResult.prefillWitness).native, false);
     assert.doesNotMatch(JSON.stringify(protectedResult.protectedFields), /private-signature|history-signature|tool-signature|base64/);
     const onlyHistory = run(req([...older, user, cue, confirm], proxy));
-    assert.equal(onlyHistory.reason, 'prefill-unavailable');
+    assert.equal(onlyHistory.reason, 'prefill-proxy-unverified');
     assert.ok(onlyHistory.protectedFields.every(field => field.region === 'history'));
 });
 

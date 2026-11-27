@@ -233,13 +233,13 @@ test('stock ST native prefix forwarding and optional non-streaming usage passthr
     });
     await t.test('Carbon proxy preserves rules with and without declared prefill support', async () => {
         const outgoing = { ...request, chat_completion_source: 'vertexai', model: 'gemini-4-carbon',
-            reverse_proxy: 'https://gateway.example', vertexai_auth_mode: 'proxy', enable_web_search: true };
+            reverse_proxy: 'https://gateway.example', vertexai_auth_mode: 'express', enable_web_search: true };
         const packet = { candidates: [{ content: { role: 'model', parts: [{ text: '正文。' }] }, finishReason: 'STOP' }],
             usageMetadata: { promptTokenCount: 61, thoughtsTokenCount: 14, candidatesTokenCount: 9, totalTokenCount: 84 } };
         for (const declared of [false, true]) {
             const plan = planInjection(outgoing, { googleProxyPrefill: declared ? googleProxyKey(outgoing) : '' },
                 { preset, activeOrderId: 100001 });
-            assert.equal(plan.reason, declared ? 'prefill-converted' : 'prefill-unavailable');
+            assert.equal(plan.reason, declared ? 'prefill-converted' : 'prefill-proxy-unverified');
             const input = { ...outgoing, messages: plan.messages };
             const stock = await callHost(source, 'sendMakerSuiteRequest', input, packet);
             const sent = await callHost(patched, 'sendMakerSuiteRequest', input, packet);

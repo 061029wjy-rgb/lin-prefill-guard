@@ -228,7 +228,7 @@ test('actual preset exports at the settings event and fetch boundary: exactly on
         assert.equal(bodies.length,24);
     });
 
-test('the packaged UI entry point reports a matched layout, conflicting group switches and missing definitions',
+test('the panel reports the layout and enables a tested Vertex relay while auth says Express',
     {skip:!process.env.LIN293_FY_PRESET},async t=>{
         // Only the DOM / ST globals are doubles. index.js mounts its normal panel and binds its own buttons.
         class Element {
@@ -246,10 +246,26 @@ test('the packaged UI entry point reports a matched layout, conflicting group sw
         }
         const host=new Element('div'), p=JSON.parse(readFileSync(process.env.LIN293_FY_PRESET));
         p.chat_completion_source='vertexai';
-        const events=new Map(), ctx={chat:[],chatCompletionSettings:p,extensionSettings:{},eventTypes:{CHAT_COMPLETION_SETTINGS_READY:'ready'},
+        p.reverse_proxy='https://gateway.example/v1';
+        p.vertexai_auth_mode='express';
+        const events=new Map(), ctx={chat:[],chatCompletionSettings:p,extensionSettings:{},
+            eventTypes:{CHAT_COMPLETION_SETTINGS_READY:'ready',CONNECTION_PROFILE_LOADED:'connection'},
             eventSource:{on:(k,v)=>events.set(k,v),removeListener:k=>events.delete(k)},getChatCompletionModel:()=>'gemini-4-carbon',
-            accountStorage:{getItem:()=>null,setItem(){}},saveSettingsDebounced(){}};
-        const previous={SillyTavern:globalThis.SillyTavern,document:globalThis.document};
+            getRequestHeaders:()=>({ 'Content-Type': 'application/json' }),accountStorage:{getItem:()=>null,setItem(){}},saveSettingsDebounced(){}};
+        const previous={SillyTavern:globalThis.SillyTavern,document:globalThis.document,fetch:globalThis.fetch};
+        let probeCalls=0;
+        globalThis.fetch=async (url,options)=>{
+            probeCalls++;
+            assert.equal(url,'/api/backends/chat-completions/generate');
+            const { messages, type, vertexai_auth_mode, stream } = JSON.parse(options.body);
+            assert.equal(type,'quiet');
+            assert.equal(vertexai_auth_mode,'express');
+            const prompt = messages[0].content;
+            const suffix = prompt.slice(prompt.indexOf(messages[1].content) + messages[1].content.length);
+            if (stream) return new Response('data: ' + JSON.stringify({ choices: [{ delta: { content: suffix }, finish_reason: 'stop' }] })
+                + '\n\ndata: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream' } });
+            return Response.json({ choices: [{ message: { content: suffix } }] });
+        };
         globalThis.document={querySelector:k=>k==='#extensions_settings2'?host:null,getElementById:()=>null,createElement:tag=>new Element(tag)};
         globalThis.SillyTavern={getContext:()=>ctx};
         let ui;
@@ -258,6 +274,24 @@ test('the packaged UI entry point reports a matched layout, conflicting group sw
         const button=host.find(n=>n.tagName==='button' && n.textContent.includes('本地自检'));
         assert.ok(button);const result=host.querySelector('.lpg-selftest');assert.ok(result);
         button.events.click();assert.match(result.textContent,/已识别 Lin 独立双尾承接/);
+        assert.match(result.textContent,/已识别Vertex AI 反代/);
+        const probe=host.querySelector('.lpg-proxy-test');
+        assert.equal(probe.disabled,false);
+        await probe.events.click();
+        assert.equal(probeCalls,1);
+        assert.equal(host.querySelector('[data-setting="proxyPrefill"]').checked,true);
+        assert.match(host.querySelector('.lpg-proxy-result').textContent,/返回了预期续写/);
+        const q={...request(assemble(p,100001)),reverse_proxy:p.reverse_proxy,vertexai_auth_mode:'express'};
+        const [cue, rule]=q.messages.slice(-2);
+        events.get('ready')(q);
+        assert.equal(q.messages.at(-1),cue);
+        assert.equal(q.messages.at(-2),rule);
+        p.reverse_proxy='https://different.example';
+        events.get('connection')();
+        assert.equal(host.querySelector('[data-setting="proxyPrefill"]').checked,false);
+        const q2={...request(assemble(p,100001)),reverse_proxy:p.reverse_proxy,vertexai_auth_mode:'express'};
+        events.get('ready')(q2);
+        assert.equal(q2.messages.at(-1).role,'user');
         const confirm=p.prompt_order[1].order.find(e=>e.identifier===U);confirm.enabled=false;
         button.events.click();assert.match(result.textContent,/未确认承接协议.*各组不一致/);
         confirm.enabled=true;p.prompts=p.prompts.filter(e=>e.identifier!==U);
