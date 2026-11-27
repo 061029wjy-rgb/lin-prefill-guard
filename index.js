@@ -1,9 +1,10 @@
-import { inspectProtocol, PROTOCOL_NAMES } from './protocol.js?v=1.5.0';
-import { gemini4Target } from './gemini4.js?v=1.5.0';
-import { googleProxyKey, prefillRoute } from './prefill.js?v=1.5.0';
-import { DEFAULT_PREFILL, DEFAULT_NUDGE, SETTINGS_KEY, VERSION, REASONS, normalizeSettings, migrateSettings } from './core.js?v=1.5.0';
-import { createController } from './controller.js?v=1.5.0';
-import { formatRecord, googleThinkingStatus, recordStatus } from './diagnostics.js?v=1.5.0';
+import { inspectProtocol, PROTOCOL_NAMES } from './protocol.js?v=1.5.1';
+import { gemini4Target } from './gemini4.js?v=1.5.1';
+import { identifyProxy, prefillRoute, proxyMethod } from './prefill.js?v=1.5.1';
+import { checkProxyPrefill } from './proxy-check.js?v=1.5.1';
+import { DEFAULT_PREFILL, DEFAULT_NUDGE, SETTINGS_KEY, VERSION, REASONS, normalizeSettings, migrateSettings } from './core.js?v=1.5.1';
+import { createController } from './controller.js?v=1.5.1';
+import { formatRecord, googleThinkingStatus, recordStatus } from './diagnostics.js?v=1.5.1';
 
 const INSTANCE_KEY = Symbol.for('lin-prefill-guard.instance');
 let controller;
@@ -11,11 +12,14 @@ let panel;
 let pendingReady;
 let lastView;
 let selectedRecord = '';
+let proxyTest;
+let proxyFeedback;
 
 // ST exposes the active prompt-order group on its own chat-completion module.
 // Feature-detect it without waiting in the generation path; incompatible forks use
 // evidence shared by the available groups, never another character's switches.
 let openaiHost;
+let openaiHostReady;
 function getOrderId(preset) {
     const pm=openaiHost?.promptManager;
     if (!pm || pm.serviceSettings !== preset) return null;
@@ -25,8 +29,10 @@ function getOrderId(preset) {
 function context() { return globalThis.SillyTavern.getContext(); }
 function activeConnection(preset = context().chatCompletionSettings || {}) {
     const ctx = context();
-    const model = ctx.getChatCompletionModel?.(preset) ?? openaiHost?.getChatCompletionModel?.(preset) ??
-        (preset.chat_completion_source === 'makersuite' ? preset.google_model : preset.vertexai_model);
+    const modelFields = { makersuite: 'google_model', vertexai: 'vertexai_model', openai: 'openai_model',
+        custom: 'custom_model', deepseek: 'deepseek_model', mistralai: 'mistralai_model', claude: 'claude_model' };
+    const model = ctx.getChatCompletionModel?.(preset) || openaiHost?.getChatCompletionModel?.(preset) ||
+        preset[modelFields[preset.chat_completion_source]];
     return { ...preset, model, include_reasoning: preset.show_thoughts };
 }
 function settings() {
@@ -45,6 +51,13 @@ function save(key, value) {
     context().saveSettingsDebounced();
     updateStatus(controller?.snapshot());
 }
+function saveProxyApproval(proxy, approval) {
+    const local = settings();
+    if (approval) local.proxyPrefill = approval;
+    else if (local.proxyPrefill?.key === proxy.key) delete local.proxyPrefill;
+    if (proxy.legacyKey && proxy.legacyKey === local.googleProxyPrefill) delete local.googleProxyPrefill;
+    context().saveSettingsDebounced?.();
+}
 function element(tag, props = {}, text = '') {
     const node = document.createElement(tag);
     Object.assign(node, props);
@@ -61,11 +74,29 @@ function updateStatus(view) {
         const input = panel.querySelector(`[data-setting="${key}"]`);
         if (input) input.disabled = state.requestMode !== 'enhance';
     }
-    const proxyBox = panel.querySelector('[data-setting="googleProxyPrefill"]');
+    const proxyBox = panel.querySelector('[data-setting="proxyPrefill"]');
     if (proxyBox) {
-        const key = googleProxyKey(activeConnection());
-        proxyBox.disabled = !key || state.requestMode !== 'native';
-        proxyBox.checked = !!key && key === state.googleProxyPrefill;
+        const connection = activeConnection();
+        const proxy = identifyProxy(connection);
+        const method = proxyMethod(proxy, state.proxyCompatibleMethod);
+        const route = prefillRoute(connection, state.googleProxyPrefill, state.proxyPrefill);
+        if (proxyTest && (!state.enabled || state.requestMode !== 'native' || proxyTest.key !== proxy?.key || proxyTest.method !== method)) {
+            proxyTest.abort.abort();
+            proxyTest = undefined;
+        }
+        const available = !!proxy && state.enabled && state.requestMode === 'native' &&
+            connection.custom_prompt_post_processing !== 'single';
+        proxyBox.disabled = !available || !!proxyTest;
+        proxyBox.checked = !!method && route.method === method;
+        const choice = panel.querySelector('.lpg-proxy-method');
+        choice.hidden = !proxy || proxy.google;
+        choice.querySelector('[data-setting="proxyCompatibleMethod"]').disabled = !available || !!proxyTest;
+        const test = panel.querySelector('.lpg-proxy-test');
+        test.disabled = !available || !!proxyTest;
+        const status = panel.querySelector('.lpg-proxy-result');
+        status.textContent = proxyTest ? '正在用当前连接测试回复前缀。'
+            : proxyFeedback?.key === proxy?.key && proxyFeedback?.method === method ? proxyFeedback.message
+            : proxy ? route.detail : '在酒馆选择使用反代的连接后，这里会显示识别结果。';
     }
     const last = lastView?.last;
     const badge = panel.querySelector('.lpg-badge');
@@ -223,11 +254,52 @@ function mount() {
     body.append(hint('渠道支持时，完整确认和其他尾部规则照原文保留，原 assistant 承接放到回复前缀的位置。渠道能力未确认时，诊断显示原承接的实际发送结果。'));
     const proxyRow = element('label', { className: 'lpg-check' });
     const proxyBox = element('input', { type: 'checkbox' });
-    proxyBox.dataset.setting = 'googleProxyPrefill';
-    proxyBox.addEventListener('change', () => save('googleProxyPrefill',
-        proxyBox.checked ? googleProxyKey(activeConnection()) : ''));
-    proxyRow.append(proxyBox, element('span', {}, '当前 Google 转发明确支持末尾 model 前缀'));
-    body.append(proxyRow, hint('仅在转发服务明确支持这一协议时启用。声明与当前转发地址和模型绑定。'));
+    proxyBox.dataset.setting = 'proxyPrefill';
+    proxyBox.addEventListener('change', () => {
+        const proxy = identifyProxy(activeConnection());
+        if (!proxy || proxyTest) return;
+        proxyFeedback = undefined;
+        const method = proxyMethod(proxy, normalizeSettings(settings()).proxyCompatibleMethod);
+        saveProxyApproval(proxy, proxyBox.checked ? { key: proxy.key, method, evidence: 'declared' } : null);
+        updateStatus();
+    });
+    proxyRow.append(proxyBox, element('span', {}, '当前反代已测试通过或由服务商确认支持'));
+    const proxyChoice = select('OpenAI 兼容反代协议', 'proxyCompatibleMethod',
+        [['compatible-prefix', '末尾 assistant + prefix:true'], ['compatible-assistant', '末尾 assistant']]);
+    proxyChoice.className += ' lpg-proxy-method';
+    const proxyStatus = element('p', { className: 'lpg-hint lpg-proxy-result', role: 'status' });
+    const proxyButton = element('button', { type: 'button', className: 'menu_button lpg-button lpg-proxy-test' }, '测试当前反代前缀（发 1 次）');
+    proxyButton.addEventListener('click', async () => {
+        const connection = activeConnection();
+        const proxy = identifyProxy(connection);
+        const state = normalizeSettings(settings());
+        if (!proxy || proxyTest || !state.enabled || state.requestMode !== 'native') return;
+        const method = proxyMethod(proxy, state.proxyCompatibleMethod);
+        const run = { key: proxy.key, method, abort: new AbortController() };
+        proxyTest = run;
+        updateStatus();
+        try {
+            const host = await openaiHostReady;
+            let parseYAML;
+            if (proxy.source === 'custom' && (connection.custom_include_body || connection.custom_exclude_body)) {
+                const library = await import('../../../../lib.js').catch(() => null);
+                parseYAML = library?.yaml?.parse;
+            }
+            const result = await checkProxyPrefill({ connection, context: context(), compatibleMethod: method, parseYAML,
+                createGenerationParameters: host?.createGenerationParameters, signal: run.abort.signal });
+            if (proxyTest !== run || identifyProxy(activeConnection())?.key !== run.key) return;
+            proxyFeedback = { key: run.key, method, message: result.message };
+            const current = normalizeSettings(settings());
+            const route = prefillRoute(connection, current.googleProxyPrefill, current.proxyPrefill);
+            if (result.approval) saveProxyApproval(proxy, result.approval);
+            else if (result.status === 'rejected' && route.method === method) saveProxyApproval(proxy, null);
+        } catch {
+            if (proxyTest === run) proxyFeedback = { key: run.key, method, message: '测试未完成，请检查当前酒馆连接。' };
+        } finally {
+            if (proxyTest === run) { proxyTest = undefined; updateStatus(); }
+        }
+    });
+    body.append(proxyChoice, proxyRow, proxyButton, hint('测试发送一组独立样例，可能产生少量用量。命中预期续写后只为当前地址和模型启用。'), proxyStatus);
     body.append(select('适用范围', 'scope', [['lin', '仅已识别且启用的 Lin 承接条目'], ['all', '所有 Chat Completion 预设']]));
     body.append(select('注入方式', 'mode', [['user', '单条 user 提示（兼容优先）'], ['pair', 'assistant 承接 + user 执行']]));
     body.append(select('思考预算', 'reasoningMode', [['keep', '沿用当前参数'], ['balanced', '已识别 Gemini：高 / 最大思考降为适中']]));
@@ -261,7 +333,7 @@ function mount() {
         const layout = inspectProtocol(preset,'normal',getOrderId(preset));
         const state = normalizeSettings(settings());
         if (state.requestMode === 'native') {
-            const route = prefillRoute(activeConnection(preset), state.googleProxyPrefill);
+            const route = prefillRoute(activeConnection(preset), state.googleProxyPrefill, state.proxyPrefill);
             const protocol = layout.candidate && layout.reason ? PROTOCOL_NAMES.unknown + '。' + layout.detail
                 : layout.kind !== 'unknown' ? '已识别 ' + PROTOCOL_NAMES[layout.kind] + '。'
                     : '实际承接条目以发送核验为准。';
@@ -335,6 +407,9 @@ function mount() {
 }
 
 export function onDisable() {
+    proxyTest?.abort.abort();
+    proxyTest = undefined;
+    proxyFeedback = undefined;
     controller?.dispose();
     controller = undefined;
     if (pendingReady && globalThis.SillyTavern?.getContext) {
@@ -354,7 +429,11 @@ export function onEnable() {
         return;
     }
     globalThis[INSTANCE_KEY]?.dispose?.();
-    if (!openaiHost) void import('../../../openai.js').then(m=>{openaiHost=m;}).catch(()=>{});
+    if (!openaiHostReady) openaiHostReady = import('../../../openai.js').then(module => {
+        openaiHost = module;
+        updateStatus();
+        return module;
+    }).catch(() => undefined);
     globalThis[INSTANCE_KEY] = { dispose: onDisable };
     lastView = undefined;
     selectedRecord = '';

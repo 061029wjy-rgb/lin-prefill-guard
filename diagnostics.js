@@ -1,8 +1,8 @@
-import { directGoogle4, inspectProtocol, PROTOCOL_NAMES } from './protocol.js?v=1.5.0';
-import { isGemini4Segment } from './gemini4.js?v=1.5.0';
-import { getLinState, normalizeSettings, plainText, VERSION } from './core.js?v=1.5.0';
-import { deliveryProfile } from './delivery.js?v=1.5.0';
-import { structureDiagnosis, endingDiagnosis, replySignalDiagnosis } from './structure.js?v=1.5.0';
+import { directGoogle4, inspectProtocol, PROTOCOL_NAMES } from './protocol.js?v=1.5.1';
+import { isGemini4Segment } from './gemini4.js?v=1.5.1';
+import { getLinState, normalizeSettings, plainText, VERSION } from './core.js?v=1.5.1';
+import { deliveryProfile } from './delivery.js?v=1.5.1';
+import { structureDiagnosis, endingDiagnosis, replySignalDiagnosis } from './structure.js?v=1.5.1';
 
 export const HISTORY_KEY = 'lin_prefill_guard_history_v2';
 export const HISTORY_LIMIT = 50;
@@ -286,6 +286,7 @@ export function recordStatus(record = {}) {
     if (w.responseComplete && !w.finishReason) return { label: '结束原因未知', state: 'warn' };
     if (w.finishReason) return { label: '接口已结束·正文待核', state: 'idle' };
     if (record.dispatch?.prefill?.native) return { label: '已核对原生前缀', state: 'idle' };
+    if (record.reason === 'prefill-proxy-unverified') return { label: '反代已识别 · 待验证前缀', state: 'idle' };
     if (record.dispatch) return { label: record.dispatch.prefill?.verified ? '承接已核对' : '等待结束证据', state: 'idle' };
     if (record.request?.lowThinkingRequested) return { label: '已组装低档请求', state: 'idle' };
     return { label: ['g291-ready','g291-authored-ready','prefill-unavailable','prefill-protected-tail'].includes(record.reason) && !record.applied
@@ -372,7 +373,7 @@ export function formatRecord(record, records = []) {
     }
     if (record.gemini4) lines.push('适配目标：' + record.gemini4.model + (record.gemini4.indirect ? '（按连接别名识别，实际后端未知）' : '（按酒馆连接识别）'));
     if (directGoogle4(record.gemini4) && record.requestMode !== 'native') lines.push('Google 回复前缀不受支持。Lin 承接位于消息历史中。');
-    if (record.prefill) lines.push(record.prefill.channel);
+    if (record.prefill?.channel && !record.explanation?.includes(record.prefill.channel)) lines.push(record.prefill.channel);
     if (record.protectedFields?.length) {
         lines.push('受保护字段（索引从 0 开始）');
         for (const { index, role, field, contentType, region } of record.protectedFields) {

@@ -1,11 +1,11 @@
-import { orderProof } from './gemini4.js?v=1.5.0';
-import { directGoogle4 } from './protocol.js?v=1.5.0';
-import { planInjection, REASONS, VERSION, normalizeSettings, getLinState } from './core.js?v=1.5.0';
-import { auditPreset, captureInjection, createHistory, planReasoning, requestKey, requestMeta, recordDiagnosis } from './diagnostics.js?v=1.5.0';
-import { installObserver } from './observer.js?v=1.5.0';
-import { analyzeOutput, structureDiagnosis, textDigest } from './structure.js?v=1.5.0';
-import { createRecovery } from './recovery.js?v=1.5.0';
-import { verifyPrefill } from './prefill.js?v=1.5.0';
+import { orderProof } from './gemini4.js?v=1.5.1';
+import { directGoogle4 } from './protocol.js?v=1.5.1';
+import { planInjection, REASONS, VERSION, normalizeSettings, getLinState } from './core.js?v=1.5.1';
+import { auditPreset, captureInjection, createHistory, planReasoning, requestKey, requestMeta, recordDiagnosis } from './diagnostics.js?v=1.5.1';
+import { installObserver } from './observer.js?v=1.5.1';
+import { analyzeOutput, structureDiagnosis, textDigest } from './structure.js?v=1.5.1';
+import { createRecovery } from './recovery.js?v=1.5.1';
+import { verifyPrefill } from './prefill.js?v=1.5.1';
 
 export function createController({ getContext, getSettings, getOrderId = () => null, onStatus = () => {}, networkTarget = globalThis, hasDraft = () => false }) {
     const ctx = getContext();
@@ -121,7 +121,7 @@ export function createController({ getContext, getSettings, getOrderId = () => n
             const key = requestKey(planned);
             const prior = priorRef && (history.list().find(r => r.id === priorRef.id) || priorRef);
             const alreadyConverted = (result.reason === 'prefill-ready' && prior?.reason === 'prefill-converted' ||
-                result.reason === 'prefill-unavailable' && prior?.reason === 'prefill-compatible') &&
+                ['prefill-unavailable', 'prefill-proxy-unverified'].includes(result.reason) && prior?.reason === 'prefill-compatible') &&
                 pending.some(item => item.id === prior.id && item.key === key);
             const reason = alreadyConverted ? prior.reason : result.reason;
             const report = {
@@ -321,6 +321,10 @@ export function createController({ getContext, getSettings, getOrderId = () => n
         subscribe(events.GENERATION_ENDED, onEnd);
         subscribe(events.GENERATION_STOPPED, onStop);
         subscribe(events.CHAT_CHANGED, onChatChanged);
+        subscribe(events.CHATCOMPLETION_SOURCE_CHANGED, publish);
+        subscribe(events.CHATCOMPLETION_MODEL_CHANGED, publish);
+        subscribe(events.CONNECTION_PROFILE_LOADED, publish);
+        subscribe(events.SETTINGS_UPDATED, publish);
         lateRegistration();
     }
     return {

@@ -1,5 +1,5 @@
 /** Read-only observation of ST's single chat endpoint. Never retries or rewrites a response. */
-import { analyzeOutput, textDigest } from './structure.js?v=1.5.0';
+import { analyzeOutput, textDigest } from './structure.js?v=1.5.1';
 const textBuffers = new WeakMap();
 const textValue = value => typeof value === 'string' ? value : Array.isArray(value)
     ? value.filter(p => !p?.thought && p?.type !== 'thinking').map(p => typeof p?.text === 'string' ? p.text : '').join('') : '';
@@ -28,6 +28,9 @@ export function addResponseData(stats, data) {
         // Fixed categories only; never export arbitrary provider error messages.
         const status = Number(data.error?.code ?? data.error?.status);
         if (Number.isInteger(status) && status >= 400 && status <= 599) stats.apiStatus = status;
+        const diagnostic = data.error?.message ?? (typeof data.error === 'string' ? data.error : data.message);
+        if (typeof diagnostic === 'string' && /(?:(?:requests? ending with|last|final)\b.{0,80}\b(?:assistant|model)\b.{0,80}(?:not supported|not allowed|must be user)|(?:prefill(?:ing)?|reply prefix).{0,48}(?:not (?:supported|allowed)|unsupported)|(?:unknown|unrecognized|unsupported).{0,30}\b(?:field|parameter)\b.{0,24}\bprefix\b)/i
+            .test(diagnostic.slice(0, 2000))) stats.prefillRejected = true;
     }
     if (data.promptFeedback?.blockReason) { stats.recognized = true; stats.blockReason = safeCode(data.promptFeedback.blockReason); }
     const candidate = data.candidates?.[0];
@@ -100,7 +103,7 @@ export function addResponseData(stats, data) {
 }
 
 export async function inspectResponse(response, { maxBytes = MAX_BYTES, timeoutMs = MAX_MS, expectedStream, signal,
-    register = () => () => {} } = {}) {
+    classifyText, register = () => () => {} } = {}) {
     const started = Date.now();
     const rawType = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
     // Store only a MIME type, never arbitrary headers, text, URLs, or error messages.
@@ -189,9 +192,11 @@ export async function inspectResponse(response, { maxBytes = MAX_BYTES, timeoutM
         // Snapshot at the end of reading; unrelated host cleanup during the
         // asynchronous digest must not relabel an already completed response.
         if (signal?.aborted) stats.aborted = true;
-        stats.output = analyzeOutput(textBuffers.get(stats) || '');
-        stats.textDigest = await textDigest(textBuffers.get(stats) || '');
+        const text = textBuffers.get(stats) || '';
         textBuffers.delete(stats);
+        if (classifyText) stats.textClassification = classifyText(text);
+        stats.output = analyzeOutput(text);
+        stats.textDigest = await textDigest(text);
     }
     if (expectedStream === true && ['json', 'ndjson'].includes(stats.transport)) stats.protocolMismatch = 'stream-request-non-sse';
     if (expectedStream === false && stats.transport === 'sse') stats.protocolMismatch = 'json-request-sse';

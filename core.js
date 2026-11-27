@@ -1,12 +1,12 @@
 /** Pure request planning. This module never sends requests or changes chat history. */
-import { deliveryProfile, deliveryCue } from './delivery.js?v=1.5.0';
-import { planPair } from './lin291.js?v=1.5.0';
-import { inspectProtocol, requestRisk } from './protocol.js?v=1.5.0';
-import { planNativePrefill } from './prefill.js?v=1.5.0';
-export const VERSION = '1.5.0';
+import { deliveryProfile, deliveryCue } from './delivery.js?v=1.5.1';
+import { planPair } from './lin291.js?v=1.5.1';
+import { inspectProtocol, requestRisk } from './protocol.js?v=1.5.1';
+import { planNativePrefill, PROXY_METHODS } from './prefill.js?v=1.5.1';
+export const VERSION = '1.5.1';
 export const SETTINGS_KEY = 'lin_prefill_guard_v1';
-import { LIN_PROMPT_ID, planGemini4, gemini4Target } from './gemini4.js?v=1.5.0';
-import { planStoryHandoff } from './handoff.js?v=1.5.0';
+import { LIN_PROMPT_ID, planGemini4, gemini4Target } from './gemini4.js?v=1.5.1';
+import { planStoryHandoff } from './handoff.js?v=1.5.1';
 export { LIN_PROMPT_ID };
 export const DEFAULT_PREFILL = '已定位本轮任务：以聊天记录中真实用户的最新请求为准。续写承接最后有效正文，修订处理指定范围，戏外问题直接回答。沿用已启用的视角、角色控制和输出格式；下一条回复交付所需结果，不重演已完成的情节，不以接收确认或写作计划代替结果。';
 export const REGENERATE_PREFILL = '已定位本轮任务：重新回答聊天记录中真实用户的最新请求。以该请求之前的有效剧情为起点；被替换或未选中的回复不作为已发生剧情，不从其结尾续写。沿用已启用的视角、角色控制和输出格式，交付本轮完整的新回答。';
@@ -32,6 +32,7 @@ export const REASONS = Object.freeze({
     'prefill-converted': '已用预设的原 assistant 承接组装原生回复前缀。',
     'prefill-ready': '已核对原 assistant 承接位于原生前缀位置。',
     'prefill-unavailable': '已只读核对预设承接。',
+    'prefill-proxy-unverified': '已核对原承接，等待确认反代的前缀协议。',
     'prefill-compatible': '已恢复原承接顺序：assistant 承接在完整 user 确认前。',
     'prefill-protected-tail': '已只读核对原承接。尾段含受保护字段，保留原消息。',
     'g291-ready': '已核对末尾的原 assistant 承接和完整 user 确认，沿用原顺序。',
@@ -84,11 +85,17 @@ export const LIN_24_PREFILL = '[Lin｜本轮承接]\n本段仅定位本次生成
 
 export function normalizeSettings(value = {}) {
     const input = value && typeof value === 'object' ? value : {};
+    const proxy = input.proxyPrefill;
+    const proxyCompatibleMethod = (input.proxyCompatibleMethod ?? proxy?.method) === 'compatible-assistant'
+        ? 'compatible-assistant' : 'compatible-prefix';
     return {
         enabled: typeof input.enabled === 'boolean' ? input.enabled : DEFAULTS.enabled,
         requestMode: ['native', 'observe', 'enhance', 'gemini4', 'gemini4-story'].includes(input.requestMode)
             ? input.requestMode : DEFAULTS.requestMode,
         googleProxyPrefill: /^[a-f0-9]{16}$/.test(input.googleProxyPrefill) ? input.googleProxyPrefill : '',
+        proxyCompatibleMethod,
+        proxyPrefill: /^[a-f0-9]{16}$/.test(proxy?.key) && (proxy?.method === PROXY_METHODS[0] || proxy?.method === proxyCompatibleMethod) &&
+            ['test', 'declared'].includes(proxy?.evidence) ? { key: proxy.key, method: proxy.method, evidence: proxy.evidence } : null,
         storyMoreTokens: input.storyMoreTokens === true,
         scope: input.scope === 'all' ? 'all' : 'lin',
         mode: input.mode === 'pair' ? 'pair' : 'user',
@@ -182,7 +189,7 @@ export function planInjection(request, rawSettings = {}, { preset = {}, ownedMes
     if (!['normal', 'regenerate', 'swipe', 'continue'].includes(type)) return skip('unsupported-type');
     const layout = inspectProtocol(preset, type, activeOrderId);
     if (settings.requestMode === 'native') {
-        return planNativePrefill(request, preset, layout, type, activeOrderId, settings.googleProxyPrefill);
+        return planNativePrefill(request, preset, layout, type, activeOrderId, settings.googleProxyPrefill, settings.proxyPrefill);
     }
     const compatibleMode = ['gemini4','gemini4-story'].includes(settings.requestMode);
     if (compatibleMode || (layout.candidate && (layout.kind !== 'ordered' || settings.requestMode === 'observe'))) {

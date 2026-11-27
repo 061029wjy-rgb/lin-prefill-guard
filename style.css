@@ -31,6 +31,7 @@
 #lin-prefill-guard-panel .lpg-check { display: flex; gap: 9px; align-items: center; padding: 8px 0; cursor: pointer; }
 #lin-prefill-guard-panel .lpg-check input { flex: 0 0 auto; accent-color: var(--lpg-accent); }
 #lin-prefill-guard-panel .lpg-field { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
+#lin-prefill-guard-panel .lpg-proxy-method[hidden] { display: none; }
 #lin-prefill-guard-panel .lpg-field select,
 #lin-prefill-guard-panel .lpg-field textarea { width: 100%; min-width: 0; box-sizing: border-box; font: inherit; font-size: 0.9em; }
 #lin-prefill-guard-panel .lpg-field select { min-height: 42px; }

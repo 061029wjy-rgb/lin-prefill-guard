@@ -1,7 +1,10 @@
-import { LIN_PROMPT_ID, PROTOCOL_NAMES } from './protocol.js?v=1.5.0';
-import { gemini4Target } from './gemini4.js?v=1.5.0';
+import { LIN_PROMPT_ID, PROTOCOL_NAMES } from './protocol.js?v=1.5.1';
+import { gemini4Target } from './gemini4.js?v=1.5.1';
 
 const GOOGLE = ['makersuite', 'vertexai'];
+const PROXY_LABELS = { vertexai: 'Vertex AI 反代', makersuite: 'Google AI Studio 反代',
+    openai: 'OpenAI 反代', custom: '自定义 OpenAI 兼容接口' };
+export const PROXY_METHODS = ['google-proxy-model', 'compatible-prefix', 'compatible-assistant'];
 const SPEAKERS = ['user', 'assistant', 'system', 'developer'];
 const CLAUDE_WITH_PREFILL = /^claude-(?:3(?:-[57])?-(?:opus|sonnet|haiku)|(?:opus|sonnet|haiku)-4(?:-[015])?)(?:-\d{8}|-latest)?$/;
 const LEGACY_NAME = '✮伪预填充｜剧情衔接（assistant）';
@@ -10,42 +13,67 @@ const list = value => Array.isArray(value) ? value : [];
 const valueType = value => value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
 const deepSeekBeta = url => /^https:\/\/api\.deepseek\.com\/beta\/?$/.test(url || '');
 
-/**
- * Bind a provider-declared contract to the current connection and model.
- * The local setting holds no URL, password or query parameters in plaintext.
- */
-export function googleProxyKey(request = {}) {
-    const { chat_completion_source: source, model, reverse_proxy: url, vertexai_auth_mode: auth } = request;
-    if (!GOOGLE.includes(source) || !nonempty(model) || !nonempty(url) || (source === 'vertexai' && auth !== 'proxy')) return '';
-    let endpoint;
-    try { endpoint = new URL(url); } catch { return ''; }
-    const hostname = endpoint.hostname.replace(/\.$/, '');
-    if (!['http:', 'https:'].includes(endpoint.protocol) || /(?:^|\.)googleapis\.com$|(?:^|\.)google\.com$/.test(hostname)) return '';
-    const identity = JSON.stringify([source, model, endpoint.href]);
+function connectionHash(fields) {
+    const identity = JSON.stringify(fields);
     let hash = 14695981039346656037n;
     for (let i = 0; i < identity.length; i++) hash = BigInt.asUintN(64, (hash ^ BigInt(identity.charCodeAt(i))) * 1099511628211n);
     return hash.toString(16).padStart(16, '0');
 }
 
-export function prefillRoute(request = {}, proxyKey = '') {
+export function identifyProxy(request = {}) {
+    const { chat_completion_source: source, model } = request;
+    const url = source === 'custom' ? request.custom_url : request.reverse_proxy;
+    if (!Object.hasOwn(PROXY_LABELS, source) || !nonempty(model) || !nonempty(url) ||
+        (source === 'custom' && deepSeekBeta(url))) return null;
+    let endpoint;
+    try { endpoint = new URL(url); } catch { return null; }
+    if (!['http:', 'https:'].includes(endpoint.protocol) ||
+        /(?:^|\.)(?:googleapis\.com|google\.com|api\.openai\.com)$/.test(endpoint.hostname.replace(/\.$/, ''))) return null;
+    // Stock ST chooses Vertex proxy auth whenever reverse_proxy is populated,
+    // including when the saved auth dropdown still says express or full.
+    const google = GOOGLE.includes(source);
+    const legacyKey = google ? connectionHash([source, model, endpoint.href]) : '';
+    endpoint.hash = '';
+    endpoint.pathname = endpoint.pathname.replace(/\/$/, '');
+    const key = connectionHash([source, model.trim(), endpoint.href,
+        request.custom_prompt_post_processing || '', source === 'custom' ? request.custom_include_body || '' : '',
+        source === 'custom' ? request.custom_exclude_body || '' : '']);
+    return { source, label: PROXY_LABELS[source], key, legacyKey, google };
+}
+
+export function proxyMethod(proxy, compatibleMethod) {
+    if (!proxy) return null;
+    if (proxy.google) return PROXY_METHODS[0];
+    return compatibleMethod === 'compatible-assistant' ? 'compatible-assistant' : 'compatible-prefix';
+}
+
+export function googleProxyKey(request = {}) {
+    return identifyProxy(request)?.legacyKey || '';
+}
+
+export function prefillRoute(request = {}, proxyKey = '', approval = null) {
     const source = request.chat_completion_source;
     const model = String(request.model || '').trim().toLowerCase();
     const unavailable = detail => ({ method: null, detail });
-    if (GOOGLE.includes(source)) {
-        const key = googleProxyKey(request);
-        if (key && key === proxyKey) {
-            // ST 1.19.1 converts these newer model IDs to a user turn even at the tail.
-            if (/gemini-3\.[67]-flash|gemini-3\.5-flash-lite/.test(model))
-                return unavailable('此模型在酒馆的 Google 转换器中会把末尾 assistant 转回 user。');
-            return { method: 'google-proxy-model', detail: '按当前代理声明发送末尾 model 前缀。' };
-        }
-        return request.reverse_proxy || request.vertexai_auth_mode === 'proxy'
-            ? unavailable('当前 Google 转发未确认支持末尾 model 真预填充。')
-            : unavailable('当前 Google 连接没有已确认的自定义回复前缀能力。');
-    }
     if (source === 'custom' && deepSeekBeta(request.custom_url) && !nonempty(request.custom_include_body) &&
         !nonempty(request.custom_exclude_body) && (!request.custom_prompt_post_processing || request.custom_prompt_post_processing === 'none') && model)
         return { method: 'deepseek-beta', detail: 'DeepSeek Beta 的末尾 assistant + prefix:true。' };
+    const proxy = identifyProxy(request);
+    if (proxy) {
+        const method = proxyMethod(proxy, approval?.method);
+        const state = { connection: proxy.label, proxy: true };
+        if (request.custom_prompt_post_processing === 'single')
+            return { ...state, ...unavailable('已识别' + proxy.label + '。酒馆的单条消息后处理会合并回复前缀。') };
+        const confirmed = approval?.key === proxy.key && approval.method === method;
+        if (!confirmed && !(proxy.legacyKey && proxy.legacyKey === proxyKey))
+            return { ...state, method: null, detail: '已识别' + proxy.label + '。请在插件面板测试当前反代的回复前缀。' };
+        if (proxy.google && /gemini-3\.[67]-flash|gemini-3\.5-flash-lite/.test(model) &&
+            !(confirmed && approval.evidence === 'test'))
+            return { ...state, ...unavailable('已识别' + proxy.label + '。此型号在部分酒馆后端会将末尾前缀改为 user，请先实测。') };
+        return { ...state, method, detail: '已识别' + proxy.label + '。' + (confirmed && approval.evidence === 'test'
+            ? '当前连接的测试返回了预期续写。' : '按已确认的渠道协议组装回复前缀。') };
+    }
+    if (GOOGLE.includes(source)) return unavailable('当前 Google 连接没有已确认的自定义回复前缀能力。');
     if (source === 'deepseek' && (!request.reverse_proxy || deepSeekBeta(request.reverse_proxy)) && model)
         return { method: 'deepseek-beta', detail: '酒馆直连 DeepSeek Beta 的末尾 assistant + prefix:true。' };
     if (request.reverse_proxy) return unavailable('当前为转发连接，预填充协议未确认。');
@@ -148,11 +176,11 @@ function lastToolTurn(history) {
         last.function_call || list(last.content).some(block => ['tool_use', 'tool_result', 'tool_calls', 'tool_call_id', 'functionCall', 'functionResponse'].includes(block?.type)));
 }
 
-const usesPrefixFlag = method => ['mistral-prefix', 'deepseek-beta'].includes(method);
+export const usesPrefixFlag = method => ['mistral-prefix', 'deepseek-beta', 'compatible-prefix'].includes(method);
 
-export function planNativePrefill(request, preset, layout, type, activeOrderId, proxyKey) {
+export function planNativePrefill(request, preset, layout, type, activeOrderId, proxyKey, approval) {
     const messages = request.messages;
-    const route = prefillRoute(request, proxyKey);
+    const route = prefillRoute(request, proxyKey, approval);
     const { method, detail } = route;
     const target = gemini4Target(request, { tailPair: true });
     const resolved = layout.candidate ? layout : singleCue(preset, type, activeOrderId);
@@ -177,13 +205,14 @@ export function planNativePrefill(request, preset, layout, type, activeOrderId, 
     const priorPrefix = cueAlreadyLast && flag && messages.at(-1)?.prefix === true;
     const start = entries?.[0].index ?? Math.max(0, messages.length - 2);
     const protectedFields = protections(messages, start, priorPrefix ? messages.length - 1 : -1);
-    const prefill = { method, channel: detail, tailStart: start, order: entries ? (tail && confirm ? 'cue-before-user' : 'cue-last') : null };
+    const prefill = { method, channel: detail, ...(route.connection ? { connection: route.connection } : {}),
+        tailStart: start, order: entries ? (tail && confirm ? 'cue-before-user' : 'cue-last') : null };
     const result = (reason, extra = {}) => done(reason, { prefill, protectedFields, ...extra });
     if (!entries) return result('g291-anchors', { detail: '在当前尾段没有找到独立的原承接及确认，或尾部另有消息。' });
 
     const original = entries.map(({ anchor }) => anchor);
     const witness = (anchors, native = false) => ({ anchors: anchors.map(({ role, content }) => ({ role, content })),
-        method: native ? method : null, proxyKey: native ? proxyKey : '' });
+        method: native ? method : null, proxyKey: native ? proxyKey : '', approval: native ? approval : null });
     const readOnly = (reason, description) => result(reason, { detail: description, prefillWitness: witness(original) });
     if (protectedFields.some(field => field.region === 'tail'))
         return readOnly('prefill-protected-tail');
@@ -196,7 +225,7 @@ export function planNativePrefill(request, preset, layout, type, activeOrderId, 
         (nonempty(message.content) || list(message.content).length))) return readOnly('no-user');
     if (lastToolTurn(history) || (method === 'claude-assistant' && request.enable_web_search === true)) return readOnly('tools');
 
-    if (!method && (!cueLast || tail)) return readOnly('prefill-unavailable', detail);
+    if (!method && (!cueLast || tail)) return readOnly(route.proxy ? 'prefill-proxy-unverified' : 'prefill-unavailable', detail);
     const cueSlot = entries.find(entry => entry.anchor === cue);
     const cueMessage = messages[cueSlot.index];
     if (method === 'claude-assistant' && /\s$/.test(cue.content))
@@ -216,11 +245,11 @@ export function planNativePrefill(request, preset, layout, type, activeOrderId, 
 
 export function verifyPrefill(request, witness) {
     if (!witness) return null;
-    const { anchors, method, proxyKey } = witness;
+    const { anchors, method, proxyKey, approval } = witness;
     const offset = request.messages.length - anchors.length;
     const same = offset >= 0 && anchors.every((anchor, i) => matchesAnchor(request.messages[offset + i], anchor));
     if (!same) return { verified: false, native: false };
-    const routeMatches = !method || (prefillRoute(request, proxyKey).method === method &&
+    const routeMatches = !method || (prefillRoute(request, proxyKey, approval).method === method &&
         !envelopeRisk(request, usesPrefixFlag(method)));
     const flagged = !usesPrefixFlag(method) || request.messages.at(-1)?.prefix === true;
     return { verified: routeMatches && flagged, native: !!method && routeMatches && flagged, tailStart: offset };
