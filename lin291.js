@@ -1,7 +1,7 @@
 // The strict two-turn planner keeps each preset object intact.
-import { plainAnchor, containsNonemptyText } from './gemini4.js?v=1.3.4';
-import { containsText, PROTOCOL_NAMES } from './protocol.js?v=1.3.4';
-import { ACK } from './handoff.js?v=1.3.4';
+import { plainAnchor, containsNonemptyText } from './gemini4.js?v=1.5.0';
+import { containsText, PROTOCOL_NAMES } from './protocol.js?v=1.5.0';
+import { ACK } from './handoff.js?v=1.5.0';
 
 export function planPair(r, type, settings, layout, target, risk) {
     const ms = r.messages, {cue, confirm, meta} = layout;

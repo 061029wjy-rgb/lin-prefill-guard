@@ -1,8 +1,8 @@
-import { directGoogle4, inspectProtocol, PROTOCOL_NAMES } from './protocol.js?v=1.3.4';
-import { isGemini4Segment } from './gemini4.js?v=1.3.4';
-import { getLinState, normalizeSettings, plainText, VERSION } from './core.js?v=1.3.4';
-import { deliveryProfile } from './delivery.js?v=1.3.4';
-import { structureDiagnosis, endingDiagnosis, replySignalDiagnosis } from './structure.js?v=1.3.4';
+import { directGoogle4, inspectProtocol, PROTOCOL_NAMES } from './protocol.js?v=1.5.0';
+import { isGemini4Segment } from './gemini4.js?v=1.5.0';
+import { getLinState, normalizeSettings, plainText, VERSION } from './core.js?v=1.5.0';
+import { deliveryProfile } from './delivery.js?v=1.5.0';
+import { structureDiagnosis, endingDiagnosis, replySignalDiagnosis } from './structure.js?v=1.5.0';
 
 export const HISTORY_KEY = 'lin_prefill_guard_history_v2';
 export const HISTORY_LIMIT = 50;
@@ -285,9 +285,11 @@ export function recordStatus(record = {}) {
     if (shortReplyEvidence(record)) return { label: '短回复·请核对', state: 'warn' };
     if (w.responseComplete && !w.finishReason) return { label: '结束原因未知', state: 'warn' };
     if (w.finishReason) return { label: '接口已结束·正文待核', state: 'idle' };
-    if (record.dispatch) return { label: '等待结束证据', state: 'idle' };
+    if (record.dispatch?.prefill?.native) return { label: '已核对原生前缀', state: 'idle' };
+    if (record.dispatch) return { label: record.dispatch.prefill?.verified ? '承接已核对' : '等待结束证据', state: 'idle' };
     if (record.request?.lowThinkingRequested) return { label: '已组装低档请求', state: 'idle' };
-    return { label: ['g291-ready','g291-authored-ready'].includes(record.reason) && !record.applied ? '已核对·保持原样' : record.applied ? '已组装' : '未注入', state: 'idle' };
+    return { label: ['g291-ready','g291-authored-ready','prefill-unavailable','prefill-protected-tail'].includes(record.reason) && !record.applied
+        ? '已核对·保持原样' : record.applied ? '已组装' : '未注入', state: 'idle' };
 }
 
 export function profileMismatch(record = {}) {
@@ -351,13 +353,14 @@ export function formatRecord(record, records = []) {
     if (!record) return '尚无记录。正常发送一条消息后可在这里查询。';
     const lines = [`记录 ${record.id} · v${record.version || VERSION}`, `时间：${record.at}`, `类型：${record.type} · 模型：${record.request?.model || '未提供'}`, `组装：${record.explanation}`, `发送：${record.dispatch?.label || '未观察到浏览器发送，或未开启网络取证'}`];
     const source = record.dispatch?.request?.source || record.request?.source;
-    const sourceLabel = { makersuite: 'Google AI Studio', vertexai: 'Vertex AI', custom: '自定义接口', openai: 'OpenAI 兼容连接' }[source];
+    const sourceLabel = { makersuite: 'Google AI Studio', vertexai: 'Vertex AI', custom: '自定义接口',
+        openai: 'OpenAI 兼容连接', claude: 'Claude', mistralai: 'Mistral AI', deepseek: 'DeepSeek' }[source];
     lines.push(`连接来源：${sourceLabel || '其他或未提供'}（按酒馆请求参数；不证明实际上游服务）。`);
     const v291=record.lin291;
     if(record.requestMode){
         const family=PROTOCOL_NAMES[record.protocol] || (v291 && v291.identity!=='conflict'?'Lin 2.9.1':(/^Lin 2\.[89]\.[\d]+$/.test(record.identification||'')?record.identification:
             (record.version==='1.3.0' || /^1\.2\./.test(record.version||''))?'Lin 2.8.2':'预设待核对'));
-        const mode=record.requestMode==='observe'?'原样诊断（不改请求）':record.requestMode==='gemini4-story'?'Vertex 正文承接':record.requestMode==='enhance'?(v291?'保留预设原文（已跳过旧版增强）':'承接增强（旧版行为）'):'Gemini 4 承接兼容';
+        const mode=record.requestMode==='native'?'原生预填充':record.requestMode==='observe'?'原样诊断（不改请求）':record.requestMode==='gemini4-story'?'Vertex 正文承接':record.requestMode==='enhance'?(v291?'保留预设原文（已跳过旧版增强）':'承接增强（旧版行为）'):'Gemini 4 承接兼容';
         lines.push('请求处理：'+mode+(!record.protocol && ['gemini4','gemini4-story'].includes(record.requestMode)?' · '+family:''));
     }
     if (record.protocol) lines.push('配置协议：' + PROTOCOL_NAMES[record.protocol]);
@@ -368,7 +371,14 @@ export function formatRecord(record, records = []) {
         if (v291.authoredHandoff) lines.push('尾部确认含预设自己的交接段，发送位置见本条发送记录。');
     }
     if (record.gemini4) lines.push('适配目标：' + record.gemini4.model + (record.gemini4.indirect ? '（按连接别名识别，实际后端未知）' : '（按酒馆连接识别）'));
-    if (directGoogle4(record.gemini4)) lines.push('Google 回复前缀不受支持。Lin 承接位于消息历史中。');
+    if (directGoogle4(record.gemini4) && record.requestMode !== 'native') lines.push('Google 回复前缀不受支持。Lin 承接位于消息历史中。');
+    if (record.prefill) lines.push(record.prefill.channel);
+    if (record.protectedFields?.length) {
+        lines.push('受保护字段（索引从 0 开始）');
+        for (const { index, role, field, contentType, region } of record.protectedFields) {
+            lines.push(`${region === 'tail' ? '尾段' : '历史'} · messages[${index}] · ${role} · ${field} · ${contentType}`);
+        }
+    }
     const thinking = googleThinkingStatus(record);
     if (thinking) lines.push(thinking);
     if (isGemini4Segment(record)) lines.push('此响应为上游分段，需要由后端在原请求上携带续传凭据。' + (record.wire.continuationTokenSeen ? '浏览器看到了凭据字段，插件不保存或重发其值。' : '浏览器未确认收到凭据。'));
@@ -396,13 +406,15 @@ export function formatRecord(record, records = []) {
     if (record.rendered) lines.push(`酒馆保存原始文本：${record.rendered.chars} 字符；原生思考字段：${record.rendered.reasoningChars} 字符（原生思考为0不排除文本内含Lin_CoT）。`, recordDiagnosis({ rendered: record.rendered }));
     if (compareDelivery(record)) lines.push(compareDelivery(record));
     if (record.lifecycle && !record.rendered) lines.push(record.lifecycle);
-    lines.push('', '—— 请求组装时的注入文本 ——');
-    for (const m of record.injected || []) lines.push(`[${m.role}]\n${m.content}`);
-    lines.push('', '—— 浏览器发送时核对到的注入文本 ——');
-    if (record.dispatch) {
-        for (const m of record.dispatch.injected || []) lines.push(`messages[${m.index}] · ${m.role}\n${m.content}`);
-        if (!record.dispatch.injected?.length) lines.push('没有核对到原注入文本。');
-    } else lines.push('无发送层记录。');
+    if (record.requestMode !== 'native') {
+        lines.push('', '—— 请求组装时的注入文本 ——');
+        for (const m of record.injected || []) lines.push(`[${m.role}]\n${m.content}`);
+        lines.push('', '—— 浏览器发送时核对到的注入文本 ——');
+        if (record.dispatch) {
+            for (const m of record.dispatch.injected || []) lines.push(`messages[${m.index}] · ${m.role}\n${m.content}`);
+            if (!record.dispatch.injected?.length) lines.push('没有核对到原注入文本。');
+        } else lines.push('无发送层记录。');
+    }
     if (record.warnings?.length) lines.push('', '—— 预设自查 ——', ...record.warnings);
     lines.push('', '发送层记录位于浏览器到酒馆后端的边界。后端、其他拦截器和中转仍可能转换请求；不等于模型必定执行。');
     return lines.join('\n\n');

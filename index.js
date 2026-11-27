@@ -1,8 +1,9 @@
-import { inspectProtocol, PROTOCOL_NAMES } from './protocol.js?v=1.3.4';
-import { gemini4Target } from './gemini4.js?v=1.3.4';
-import { DEFAULT_PREFILL, DEFAULT_NUDGE, SETTINGS_KEY, VERSION, REASONS, normalizeSettings, migrateSettings } from './core.js?v=1.3.4';
-import { createController } from './controller.js?v=1.3.4';
-import { formatRecord, googleThinkingStatus, recordStatus } from './diagnostics.js?v=1.3.4';
+import { inspectProtocol, PROTOCOL_NAMES } from './protocol.js?v=1.5.0';
+import { gemini4Target } from './gemini4.js?v=1.5.0';
+import { googleProxyKey, prefillRoute } from './prefill.js?v=1.5.0';
+import { DEFAULT_PREFILL, DEFAULT_NUDGE, SETTINGS_KEY, VERSION, REASONS, normalizeSettings, migrateSettings } from './core.js?v=1.5.0';
+import { createController } from './controller.js?v=1.5.0';
+import { formatRecord, googleThinkingStatus, recordStatus } from './diagnostics.js?v=1.5.0';
 
 const INSTANCE_KEY = Symbol.for('lin-prefill-guard.instance');
 let controller;
@@ -22,6 +23,12 @@ function getOrderId(preset) {
     return order?.strategy === 'global' ? order.dummyId ?? null : pm.activeCharacter?.id ?? null;
 }
 function context() { return globalThis.SillyTavern.getContext(); }
+function activeConnection(preset = context().chatCompletionSettings || {}) {
+    const ctx = context();
+    const model = ctx.getChatCompletionModel?.(preset) ?? openaiHost?.getChatCompletionModel?.(preset) ??
+        (preset.chat_completion_source === 'makersuite' ? preset.google_model : preset.vertexai_model);
+    return { ...preset, model, include_reasoning: preset.show_thoughts };
+}
 function settings() {
     const ctx = context();
     if (!ctx.extensionSettings) throw new Error('Extension settings unavailable');
@@ -54,8 +61,12 @@ function updateStatus(view) {
         const input = panel.querySelector(`[data-setting="${key}"]`);
         if (input) input.disabled = state.requestMode !== 'enhance';
     }
-    const capBox = panel.querySelector('[data-setting="storyMoreTokens"]');
-    if (capBox) capBox.disabled = state.requestMode !== 'gemini4-story';
+    const proxyBox = panel.querySelector('[data-setting="googleProxyPrefill"]');
+    if (proxyBox) {
+        const key = googleProxyKey(activeConnection());
+        proxyBox.disabled = !key || state.requestMode !== 'native';
+        proxyBox.checked = !!key && key === state.googleProxyPrefill;
+    }
     const last = lastView?.last;
     const badge = panel.querySelector('.lpg-badge');
     const outcome = last ? recordStatus(last) : { label: '等待请求', state: 'idle' };
@@ -64,6 +75,7 @@ function updateStatus(view) {
     const status = panel.querySelector('.lpg-status');
     const lines = [];
     if (state.enabled && state.requestMode === 'observe') lines.push('原样诊断：保留预设的原承接、CoT、角色权限和输出顺序；不追加插件提示或调整思考参数。');
+    if (state.enabled && state.requestMode === 'native') lines.push('原生预填充使用预设的原承接文字，并沿用预设的生成参数。');
     if (state.enabled && state.requestMode === 'gemini4') lines.push('承接兼容会核对 Lin 的两条原文。Carbon、Argon 通过对话历史接收承接，最后一条为 user。');
     if (state.enabled && state.requestMode === 'gemini4-story') lines.push('Vertex 正文承接会把 预设自带的完整交接留在最后。思考档位取自当前预设。');
     if (!state.enabled) lines.push('扩展当前关闭，下次请求不注入。以下为最近记录。');
@@ -73,7 +85,14 @@ function updateStatus(view) {
         lines.push(last.explanation);
         const thinking = googleThinkingStatus(last);
         if (thinking) lines.push(thinking);
-        if (['gemini4','gemini4-story'].includes(last.requestMode)) {
+        if (last.requestMode === 'native') {
+            if (last.dispatch?.label) lines.push(last.dispatch.label);
+            else if (last.prefill?.method && last.applied) lines.push('已组装前缀，等待核对实际发送。');
+            if (last.protectedFields?.length) {
+                const tailCount = last.protectedFields.filter(field => field.region === 'tail').length;
+                lines.push(`保护记录：历史 ${last.protectedFields.length - tailCount} 处，尾段 ${tailCount} 处。具体位置见所选诊断。`);
+            }
+        } else if (['gemini4','gemini4-story'].includes(last.requestMode)) {
             if (last.dispatch?.label) lines.push(last.dispatch.label);
             else if (last.gemini4) lines.push('只看到组装事件，尚未核对浏览器发送。');
         } else if (last.applied) {
@@ -87,7 +106,8 @@ function updateStatus(view) {
     if (lastView?.storageWarning) lines.push(lastView.storageWarning);
     if (state.captureNetwork && lastView?.networkAvailable === false) lines.push('当前页面无法安装网络取证；仅记录请求事件，不能核对实际发送。');
     status.textContent = lines.join('\n');
-    panel.querySelector('.lpg-preview').textContent = last?.preview || '尚无本轮注入内容。';
+    panel.querySelector('.lpg-preview').textContent = last?.preview || (last?.dispatch?.prefill?.native ?
+        '已发送预设自己的承接前缀。' : '');
     renderHistory();
 }
 
@@ -199,17 +219,22 @@ function mount() {
     const body = element('div', { className: 'lpg-body' });
     body.append(hint(`v${VERSION} · 按当前预设和请求识别承接协议。`));
     body.append(checkbox('启用扩展', 'enabled'));
-    body.append(select('请求处理', 'requestMode', [['gemini4', '承接兼容（保留原文，推荐）'], ['gemini4-story', 'Vertex 正文承接（优先用预设自己的交接）'], ['observe', '原样诊断（不改请求）'], ['enhance', '承接增强（旧版提示）']]));
-    body.append(hint('日常选「承接兼容」：末尾已是原承接和原确认就一字不改；只有两条原文独立且恰好颠倒才交换。网页搜索可以照常开启。升级保留你原来的选择。'));
-    body.append(checkbox('正文承接时，如原上限恰为 16,384，放宽到 32,768（可能增加用时和费用）', 'storyMoreTokens'));
-    body.append(hint('选「Vertex 正文承接」时：独立双尾优先保留预设自己的「生成交接」或末尾交付指令；没有这两种结构的双尾预设 在直接 Vertex 上才会把完整原规则放到原承接前，再以短确认结尾。旧有序协议只处理已逐字核对的最大思考段。上限默认不改。'));
+    body.append(select('请求处理', 'requestMode', [['native', '原生预填充（推荐）'], ['observe', '原样诊断（不改请求）'], ['enhance', '旧版增强（会追加提示）']]));
+    body.append(hint('渠道支持时，完整确认和其他尾部规则照原文保留，原 assistant 承接放到回复前缀的位置。渠道能力未确认时，诊断显示原承接的实际发送结果。'));
+    const proxyRow = element('label', { className: 'lpg-check' });
+    const proxyBox = element('input', { type: 'checkbox' });
+    proxyBox.dataset.setting = 'googleProxyPrefill';
+    proxyBox.addEventListener('change', () => save('googleProxyPrefill',
+        proxyBox.checked ? googleProxyKey(activeConnection()) : ''));
+    proxyRow.append(proxyBox, element('span', {}, '当前 Google 转发明确支持末尾 model 前缀'));
+    body.append(proxyRow, hint('仅在转发服务明确支持这一协议时启用。声明与当前转发地址和模型绑定。'));
     body.append(select('适用范围', 'scope', [['lin', '仅已识别且启用的 Lin 承接条目'], ['all', '所有 Chat Completion 预设']]));
     body.append(select('注入方式', 'mode', [['user', '单条 user 提示（兼容优先）'], ['pair', 'assistant 承接 + user 执行']]));
     body.append(select('思考预算', 'reasoningMode', [['keep', '沿用当前参数'], ['balanced', '已识别 Gemini：高 / 最大思考降为适中']]));
     body.append(hint('上传的 Lin2.5 / 2.6 均为 auto，可保持“沿用当前参数”。可选降档只用于已识别的 Gemini 文本型号：3.0 Pro 用 low，其他支持型号用 medium；图像与未知型号不猜测。渠道仍可能忽略参数。'));
     body.append(checkbox('启用发送与接口取证（可查看实际发送提示）', 'captureNetwork'));
     body.append(checkbox('Lin2.6系列交付保护：识别三种CoT＋组件完整性', 'deliveryGuard'));
-    body.append(hint('旧版增强用于旧预设。识别到独立双尾协议时只核对原承接，不追加 2.6 提示、不接管 NPC 或 CoT 开关。取证可区分短流缺结束原因、疑似文字拒答与未闭合注释；这些判断不删除文本、不触发自动请求。'));
+    body.append(hint('取证会读取接口实报的 token 用量、结束原因和输出结构。'));
     body.append(checkbox('对“继续补全”也加提示（默认关闭）', 'enhanceContinue'));
     body.append(hint('渠道排查：在酒馆原生连接设置中关闭流式，再手动重试一次。必须在生成前切换；仅修改请求中的 stream 字段会使酒馆解析方式与响应不一致。取证现在可识别无标头 SSE、JSON 及协议错配。'));
     body.append(hint('原生继续预填充、后台摘要、用户代写、工具调用和 JSON 结构化请求会自动跳过。'));
@@ -234,6 +259,15 @@ function mount() {
     selftest.addEventListener('click', () => {
         const ctx = context(), preset = ctx.chatCompletionSettings || {};
         const layout = inspectProtocol(preset,'normal',getOrderId(preset));
+        const state = normalizeSettings(settings());
+        if (state.requestMode === 'native') {
+            const route = prefillRoute(activeConnection(preset), state.googleProxyPrefill);
+            const protocol = layout.candidate && layout.reason ? PROTOCOL_NAMES.unknown + '。' + layout.detail
+                : layout.kind !== 'unknown' ? '已识别 ' + PROTOCOL_NAMES[layout.kind] + '。'
+                    : '实际承接条目以发送核验为准。';
+            selfResult.textContent = [protocol, route.detail].filter(Boolean).join(' ');
+            return;
+        }
         if (layout.candidate || ['gemini4','gemini4-story'].includes(normalizeSettings(settings()).requestMode)) {
             const target = gemini4Target({chat_completion_source:preset.chat_completion_source,
                 model:ctx.getChatCompletionModel?.(preset),reverse_proxy:preset.reverse_proxy},{tailPair:layout.kind === 'pair'});

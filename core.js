@@ -1,11 +1,12 @@
 /** Pure request planning. This module never sends requests or changes chat history. */
-import { deliveryProfile, deliveryCue } from './delivery.js?v=1.3.4';
-import { planPair } from './lin291.js?v=1.3.4';
-import { inspectProtocol, requestRisk } from './protocol.js?v=1.3.4';
-export const VERSION = '1.3.4';
+import { deliveryProfile, deliveryCue } from './delivery.js?v=1.5.0';
+import { planPair } from './lin291.js?v=1.5.0';
+import { inspectProtocol, requestRisk } from './protocol.js?v=1.5.0';
+import { planNativePrefill } from './prefill.js?v=1.5.0';
+export const VERSION = '1.5.0';
 export const SETTINGS_KEY = 'lin_prefill_guard_v1';
-import { LIN_PROMPT_ID, planGemini4, gemini4Target } from './gemini4.js?v=1.3.4';
-import { planStoryHandoff } from './handoff.js?v=1.3.4';
+import { LIN_PROMPT_ID, planGemini4, gemini4Target } from './gemini4.js?v=1.5.0';
+import { planStoryHandoff } from './handoff.js?v=1.5.0';
 export { LIN_PROMPT_ID };
 export const DEFAULT_PREFILL = '已定位本轮任务：以聊天记录中真实用户的最新请求为准。续写承接最后有效正文，修订处理指定范围，戏外问题直接回答。沿用已启用的视角、角色控制和输出格式；下一条回复交付所需结果，不重演已完成的情节，不以接收确认或写作计划代替结果。';
 export const REGENERATE_PREFILL = '已定位本轮任务：重新回答聊天记录中真实用户的最新请求。以该请求之前的有效剧情为起点；被替换或未选中的回复不作为已发生剧情，不从其结尾续写。沿用已启用的视角、角色控制和输出格式，交付本轮完整的新回答。';
@@ -15,7 +16,7 @@ export const CONTINUE_NUDGE = '本次仅补齐上一条回复的可见断点，�
 export const CONTINUE_PREFILL = '本次任务是补全当前回复，已有文本保持有效，只交付可见断点之后缺失的部分。若仅有未完注释，先补齐并闭合，再交付正文；已完成的正文与组件不重复。沿用当前视角、角色权限及格式，不另开新场景或新一轮前置摘要。';
 export const DEFAULTS = Object.freeze({
     enabled: true,
-    requestMode: 'gemini4',
+    requestMode: 'native',
     storyMoreTokens: false,
     scope: 'lin',
     mode: 'user',
@@ -28,6 +29,11 @@ export const DEFAULTS = Object.freeze({
 });
 
 export const REASONS = Object.freeze({
+    'prefill-converted': '已用预设的原 assistant 承接组装原生回复前缀。',
+    'prefill-ready': '已核对原 assistant 承接位于原生前缀位置。',
+    'prefill-unavailable': '已只读核对预设承接。',
+    'prefill-compatible': '已恢复原承接顺序：assistant 承接在完整 user 确认前。',
+    'prefill-protected-tail': '已只读核对原承接。尾段含受保护字段，保留原消息。',
     'g291-ready': '已核对末尾的原 assistant 承接和完整 user 确认，沿用原顺序。',
     'g291-restored': '已将颠倒的两条原消息恢复为 assistant 承接、user 确认。',
     'g291-handoff': '已按所选旧版正文承接模式保留完整原规则，使用原有短确认。',
@@ -80,8 +86,9 @@ export function normalizeSettings(value = {}) {
     const input = value && typeof value === 'object' ? value : {};
     return {
         enabled: typeof input.enabled === 'boolean' ? input.enabled : DEFAULTS.enabled,
-        requestMode: ['observe', 'enhance', 'gemini4', 'gemini4-story'].includes(input.requestMode) ? input.requestMode
-            : Object.keys(input).length ? 'observe' : DEFAULTS.requestMode,
+        requestMode: ['native', 'observe', 'enhance', 'gemini4', 'gemini4-story'].includes(input.requestMode)
+            ? input.requestMode : DEFAULTS.requestMode,
+        googleProxyPrefill: /^[a-f0-9]{16}$/.test(input.googleProxyPrefill) ? input.googleProxyPrefill : '',
         storyMoreTokens: input.storyMoreTokens === true,
         scope: input.scope === 'all' ? 'all' : 'lin',
         mode: input.mode === 'pair' ? 'pair' : 'user',
@@ -94,10 +101,12 @@ export function normalizeSettings(value = {}) {
     };
 }
 
-/** New installs use the scoped adapter; do not change the chosen mode of an existing installation. */
+/** Retire automatic compatibility and story modes in the UI. Keep explicit diagnostic and legacy choices. */
 export function migrateSettings(value = {}) {
     const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
-    const next = { ...DEFAULTS, ...input, requestMode: normalizeSettings(input).requestMode };
+    const previousMode = normalizeSettings(input).requestMode;
+    const requestMode = ['gemini4', 'gemini4-story'].includes(previousMode) ? DEFAULTS.requestMode : previousMode;
+    const next = { ...DEFAULTS, ...input, requestMode };
     if (next.nudge === '请现在完成上述真实用户请求。这里是任务提示，不是新的剧情；不要复述提示。') {
         next.nudge = DEFAULT_NUDGE;
     }
@@ -172,6 +181,9 @@ export function planInjection(request, rawSettings = {}, { preset = {}, ownedMes
     if (type === 'impersonate') return skip('impersonate');
     if (!['normal', 'regenerate', 'swipe', 'continue'].includes(type)) return skip('unsupported-type');
     const layout = inspectProtocol(preset, type, activeOrderId);
+    if (settings.requestMode === 'native') {
+        return planNativePrefill(request, preset, layout, type, activeOrderId, settings.googleProxyPrefill);
+    }
     const compatibleMode = ['gemini4','gemini4-story'].includes(settings.requestMode);
     if (compatibleMode || (layout.candidate && (layout.kind !== 'ordered' || settings.requestMode === 'observe'))) {
         const target = gemini4Target(request, {tailPair:layout.kind === 'pair'});

@@ -1,6 +1,6 @@
 // Gemini 4 input compatibility. No provider credentials, generation or chat writes.
-import { containsText, PROTOCOL_NAMES } from './protocol.js?v=1.3.4';
-export { LIN_PROMPT_ID, LIN_CONFIRM_ID } from './protocol.js?v=1.3.4';
+import { containsText, PROTOCOL_NAMES } from './protocol.js?v=1.5.0';
+export { LIN_PROMPT_ID, LIN_CONFIRM_ID } from './protocol.js?v=1.5.0';
 
 export function gemini4Target(request = {}, {tailPair=false} = {}) {
     const source = request.chat_completion_source;

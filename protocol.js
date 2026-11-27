@@ -3,7 +3,7 @@ export const LIN_PROMPT_ID = 'e898d676-f02e-4868-bc51-33761e294df6';
 export const LIN_CONFIRM_ID = '68186c40-6f11-4c47-a036-58497d1d6795';
 export const NPC291 = 'b62baac5-e695-5ce5-899b-edc7989babc8';
 const CLOSURE_ID = '99dd9277-7d27-40fb-972f-a009ae4983e9';
-export const PROTOCOL_NAMES = { pair: 'Lin 独立双尾承接', ordered: 'Lin 有序承接', unknown: '未确认承接协议' };
+export const PROTOCOL_NAMES = { pair: 'Lin 独立双尾承接', ordered: 'Lin 有序承接', single: 'Lin 单条承接', unknown: '未确认承接协议' };
 export const MAX_PARAGRAPH = [
     '请注意:',
     '你将开始写作，构建正文需要注意什么要素，请你依次进行思考后再输出正文。即使指令要求有其他注释或者是锚定需要输出，也不能够干扰你的思考。',

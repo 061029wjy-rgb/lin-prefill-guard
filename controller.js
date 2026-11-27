@@ -1,10 +1,11 @@
-import { orderProof } from './gemini4.js?v=1.3.4';
-import { directGoogle4 } from './protocol.js?v=1.3.4';
-import { planInjection, REASONS, VERSION, normalizeSettings, getLinState } from './core.js?v=1.3.4';
-import { auditPreset, captureInjection, createHistory, planReasoning, requestKey, requestMeta, recordDiagnosis } from './diagnostics.js?v=1.3.4';
-import { installObserver } from './observer.js?v=1.3.4';
-import { analyzeOutput, structureDiagnosis, textDigest } from './structure.js?v=1.3.4';
-import { createRecovery } from './recovery.js?v=1.3.4';
+import { orderProof } from './gemini4.js?v=1.5.0';
+import { directGoogle4 } from './protocol.js?v=1.5.0';
+import { planInjection, REASONS, VERSION, normalizeSettings, getLinState } from './core.js?v=1.5.0';
+import { auditPreset, captureInjection, createHistory, planReasoning, requestKey, requestMeta, recordDiagnosis } from './diagnostics.js?v=1.5.0';
+import { installObserver } from './observer.js?v=1.5.0';
+import { analyzeOutput, structureDiagnosis, textDigest } from './structure.js?v=1.5.0';
+import { createRecovery } from './recovery.js?v=1.5.0';
+import { verifyPrefill } from './prefill.js?v=1.5.0';
 
 export function createController({ getContext, getSettings, getOrderId = () => null, onStatus = () => {}, networkTarget = globalThis, hasDraft = () => false }) {
     const ctx = getContext();
@@ -119,20 +120,25 @@ export function createController({ getContext, getSettings, getOrderId = () => n
             if (removeLow) delete planned.lin_gemini4_low_thinking;
             const key = requestKey(planned);
             const prior = priorRef && (history.list().find(r => r.id === priorRef.id) || priorRef);
+            const alreadyConverted = (result.reason === 'prefill-ready' && prior?.reason === 'prefill-converted' ||
+                result.reason === 'prefill-unavailable' && prior?.reason === 'prefill-compatible') &&
+                pending.some(item => item.id === prior.id && item.key === key);
+            const reason = alreadyConverted ? prior.reason : result.reason;
             const report = {
                 ...prior,
                 id: prior?.id || id(), at: prior?.at || new Date().toISOString(), version: VERSION,
-                type: result.type, applied: result.applied, reason: result.reason,
+                type: result.type, applied: result.applied || alreadyConverted, reason,
                 requestMode: normalizeSettings(settings).requestMode,
                 gemini4:result.gemini4 ?? null, protocol:result.protocol ?? null,
                 lin291:result.lin291 ?? null, handoff:result.handoff ?? null,
+                prefill: result.prefill ?? null, protectedFields: result.protectedFields ?? [],
                 origin: 'assembled',
                 manualContinue: forcedContinue,
                 identification: result.identification || 'none',
                 deliveryGuard: result.deliveryGuard === true,
                 deliveryProfile: result.profile || null,
                 presetState: { promptCount: Array.isArray(preset.prompts) ? preset.prompts.length : 0, known: lin.known, active: lin.active },
-                explanation: [REASONS[result.reason] || result.reason,result.detail].filter(Boolean).join(' '),
+                explanation: [REASONS[reason] || reason,result.detail].filter(Boolean).join(' '),
                 removedOriginal: result.removedOriginal || prior?.removedOriginal || false,
                 netChars: result.protocol ? result.netChars : result.changed ? result.netChars : prior?.netChars || 0,
                 tailRoles: result.tailRoles || [], note: result.note || '',
@@ -156,7 +162,7 @@ export function createController({ getContext, getSettings, getOrderId = () => n
                 result.injected.forEach(m => ownedMessages.add(m));
             }
             if (cap) request.max_tokens = cap.after;
-            if (result.lin291 && (result.changed || cap)) committedHandoffs.set(request,{key,cap:request.max_tokens,lin291:true,
+            if (result.lin291 && result.orderWitness && (result.changed || cap)) committedHandoffs.set(request,{key,cap:request.max_tokens,lin291:true,
                 mode:normalizeSettings(settings).requestMode,story:!!result.handoff?.shortConfirmation,witness:result.orderWitness,
                 order:result.lin291.order,authored:!!result.lin291.authoredHandoff});
             else if (result.handoff && !result.lin291) committedHandoffs.set(request,{key,cap:request.max_tokens});
@@ -165,7 +171,8 @@ export function createController({ getContext, getSettings, getOrderId = () => n
             if (!prior) response = null;
             history.put(report);
             requestRecords.set(request, report);
-            const item = { id: report.id, key, witness: result.orderWitness, source: result.gemini4?.source || report.request.source, injected: report.injected, type: result.type, model: report.request.model, at: Date.now() };
+            const item = { id: report.id, key, witness: result.orderWitness, prefillWitness: result.prefillWitness,
+                source: result.gemini4?.source || report.request.source, injected: report.injected, type: result.type, model: report.request.model, at: Date.now() };
             const existing = pending.findIndex(x => x.id === report.id);
             if (existing >= 0) pending.splice(existing, 1);
             if (!report.dispatch) pending.push(item);
@@ -235,10 +242,15 @@ export function createController({ getContext, getSettings, getOrderId = () => n
             const tail = verified && injected.at(-1).atEnd && injected.at(-1).index === request.messages.length - 1
                 && injected.every((m, i) => m.index === request.messages.length - injected.length + i);
             const order = orderProof(request.messages, candidate.witness);
+            const prefill = verifyPrefill(request, candidate.prefillWitness);
+            const prefillLabel = prefill?.native ? '发送已核对：原 assistant 承接位于渠道要求的原生前缀位置。'
+                : prefill?.verified ? '发送已核对：原承接尾段与组装时一致。'
+                : '已观察到发送；实际前缀或尾段与组装记录不一致。';
             patch(candidate.id, { dispatch: {
                 at: new Date().toISOString(), correlation, injected, verified, tail, request: requestMeta(request),
                 ...(order ? { linOrder: order } : {}),
-                label: candidate.witness?.strictTail291 && order === 'cue-before-user'
+                ...(prefill ? { prefill } : {}),
+                label: prefill ? prefillLabel : candidate.witness?.strictTail291 && order === 'cue-before-user'
                     ? (candidate.witness.rules ? '发送已核对：完整原 user 规则 → 原 assistant 承接 → 短 user 确认；已核对预设原规则。'
                         : '发送已核对：原 assistant 承接 → 完整原 user 确认都在末尾，没有追加插件提示。')
                     : candidate.witness?.rules && order === 'cue-before-user' ? '浏览器发送时已核对：原规则 → Lin 原 assistant 承接 → 最终短 user 确认；这是语义承接。'
